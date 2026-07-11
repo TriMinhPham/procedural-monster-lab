@@ -30,6 +30,7 @@ const canvas = Object.assign(makeEl(), { width: 0, height: 0, getContext: () => 
 
 const ctx = {
   console, Math, JSON, Float32Array, Map, Set, Proxy, Error, String,
+  __TEST_SEED: +(process.env.HUNT_SEED || 7),
   document: {
     getElementById: id => (id === 'gl' ? canvas : makeEl()),
     querySelectorAll: () => [],
@@ -106,14 +107,16 @@ vm.runInContext(`
   __drive(30); __checkFinite('enrage');
   if (!game.ai.enraged) throw new Error('boss did not enrage');
 
-  // 5. tail sever (part pool drained)
-  game.parts.tail = 5;
-  hitBoss(10, 'tail', boss.tail[2]);
-  if (!game.severed) throw new Error('tail did not sever');
-  if (boss.P.tailN !== 3) throw new Error('tail not shortened: ' + boss.P.tailN);
-  if (!game.props || !game.props.soft.length) throw new Error('no severed-tail prop');
-  if (game.carveNodes.length < 1) throw new Error('no tail carve node');
-  __drive(60); __checkFinite('severed');
+  // 5. tail sever (part pool drained) — only species with tails
+  if (boss.P.tailN > 0) {
+    game.parts.tail = 5;
+    hitBoss(10, 'tail', boss.tail[2]);
+    if (!game.severed) throw new Error('tail did not sever');
+    if (boss.P.tailN !== 3) throw new Error('tail not shortened: ' + boss.P.tailN);
+    if (!game.props || !game.props.soft.length) throw new Error('no severed-tail prop');
+    if (game.carveNodes.length < 1) throw new Error('no tail carve node');
+    __drive(60); __checkFinite('severed');
+  } else console.log('severed | (tailless species — skipped)');
 
   // 6. boss slam event sanity (enraged move) — force it
   game.ai.slamCool = -1; game.ai.atkCool = 9; game.ai.chargeCool = 9;

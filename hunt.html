@@ -72,7 +72,7 @@
 
 <div class="brand">
   <div class="t1">MONSTER <b>HUNT</b></div>
-  <div class="t2">QUEST 01 · SLAY THE ALPHA REX · SCARRED CRATER</div>
+  <div class="t2" id="quest2">QUEST 01 · SCARRED CRATER</div>
 </div>
 <div class="hints"><span>WASD</span> MOVE · <span>CLICK/J</span> ATTACK — CHAIN ×3 · <span>⇧</span> DASH i-frames · <span>␣</span> JUMP (over tail swipes) · <span>TAB</span> LOCK-ON · <span>E</span> CARVE · <span>M</span> MUTE</div>
 
@@ -228,7 +228,7 @@ function makeCreature(name,opts={}){
     legScale:1, radScale:1, wobble:0,
     spikes:P.spikesDefault, hat:false, roam:false,
     pal:opts.pal||P.pal, time:0,
-    wings:!!P.wings, wOpen:0, air:0, flap:0,
+    wings:!!P.wings, flyOK:true, wOpen:0, air:0, flap:0,
     restOn:false, rest:0,
     act:null, actT:0, _struck:false, _slam:false, jawEnv:0,
     jumpY:0, jumpVy:0, crouch:0, imp:V(), fw:V(1,0,0),
@@ -333,7 +333,7 @@ function simulate(cr,dt){
   const toT=sub(st.target,st.leader); toT[1]=0;
   const dist=len(toT);
   // winged creatures take off for far calls, land near them
-  st.air+=(((st.wings&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
+  st.air+=(((st.wings&&st.flyOK&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
   const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95);
   const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*1.8)):V();
   const k=1-Math.exp(-(st.isPlayer?7:4)*dt); // the hunter turns on a dime
@@ -1087,15 +1087,75 @@ const sfx={
   faint:()=>tone(220,55,.7,'sine',.4),
 };
 
-// ---------- the hunt: creatures, quest state ----------
+// ---------- the bestiary: every hunt is a generated species ----------
+// The body plan IS the moveset: wings dive, long tails sweep wide, tailless
+// bruisers slam, bulk buys HP and costs speed, twitchy species get short tells.
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const SEED=(()=>{
+  if(typeof __TEST_SEED!=='undefined')return __TEST_SEED;
+  try{const m=/[?&]seed=(\d+)/.exec(location.search);if(m)return +m[1];}catch(e){}
+  return Math.floor(Math.random()*1e9);
+})();
+const rng=mulberry32(SEED);
+const pick=arr=>arr[Math.floor(rng()*arr.length)];
+const rr_=(a,b)=>a+rng()*(b-a);
+
+function genSpecies(){
+  const base=pick(['rex','beast','skink','bug','wyvern']);
+  const biped=base==='rex'||base==='wyvern';
+  const sp={base,seed:SEED};
+  sp.scale=rr_(1.25,1.85);
+  sp.bulk=rr_(.85,1.28);                       // plumpness: HP up, speed down
+  sp.legScale=rr_(.85,1.25);
+  sp.pairs=base==='bug'?pick([3,4]):biped?1:pick([2,2,3]);
+  sp.posture=base==='skink'?rr_(0,.45):rr_(.4,1);
+  sp.wings=base==='wyvern'||rng()<.18;
+  sp.tailMul=base==='bug'?0:(rng()<.15?0:rr_(.7,1.5));
+  sp.spikes=rng()<.5;
+  sp.snappy=rr_(0,1);                          // 0 ponderous … 1 twitchy
+  sp.pal=pick(Object.keys(PALETTES));
+  sp.hp=Math.round(650*sp.scale*sp.bulk);
+  sp.speedMul=(1.05-.45*(sp.bulk-1))*(base==='bug'?1.2:1)*.85;
+  const EP=['SCARRED','ASHEN','DUNE','CRATER','FERAL','ELDER','HOLLOW','GILDED','UMBRAL'];
+  const A=['Vul','Khe','Zar','Gor','Nar','Rath','Dur','Mor','Azh','Thal','Kro','Yian'];
+  const B=['khan','gante','dros','maw','vore','zuul','garu','loth','ryu','thax'];
+  sp.short=pick(A)+pick(B);
+  sp.name=(pick(EP)+' '+sp.short).toUpperCase();
+  return sp;
+}
+
+const SPECIES=genSpecies();
+const BN=SPECIES.short;                        // "the Vulkhan" in log lines
 const player=makeCreature('beast',{isPlayer:true,pos:V(0,0,9),hp:100,pal:'ember',scale:.9,speed:1.25});
-const boss=makeCreature('rex',{pos:V(0,0,-3),hp:1000,pal:'fossil',scale:1.55,speed:.85});
-boss.roam=true;
+const boss=makeCreature(SPECIES.base,{pos:V(0,0,-3),hp:SPECIES.hp,pal:SPECIES.pal,
+  scale:SPECIES.scale,speed:SPECIES.speedMul});
+boss.roam=true; boss.flyOK=false;              // wings only when the AI commits to a dive
+boss.radScale=SPECIES.bulk; boss.legScale=SPECIES.legScale;
+boss.posture=SPECIES.posture; boss.wings=SPECIES.wings; boss.spikes=SPECIES.spikes;
+if(SPECIES.pairs!==boss.P.pairs)buildLegs(boss,SPECIES.pairs);
+if(SPECIES.tailMul===0){boss.P.tailN=0;boss.tail.length=0;}
+else boss.P.tailLen*=SPECIES.tailMul;
+// tempo: twitchy species track and strike faster
+boss.P.dyn=[boss.P.dyn[0]*(.85+.5*SPECIES.snappy),boss.P.dyn[1],boss.P.dyn[2]];
+setDyn(boss,boss.P.dyn[0],boss.P.dyn[1],boss.P.dyn[2]);
 let bossBaseSpeed=boss.P.speed;
+const HAS_TAIL=boss.P.tailN>0;
+const AIP={                                    // species-derived combat profile
+  biteWind:.52-.24*SPECIES.snappy,
+  biteDmg:Math.round(11+6*SPECIES.scale+6*SPECIES.bulk),
+  chargeWind:.68-.3*SPECIES.snappy,
+  chargeImp:9+3.5*SPECIES.legScale,
+  atkCd:2.7-1.1*SPECIES.snappy,
+  swipeDmg:Math.round(10+5*SPECIES.scale),
+};
 const game={
   over:false,failed:false,faints:0,loot:[],carveNodes:[],props:null,
-  severed:false,parts:{tail:130,legs:150},tiredHurt:0,rage:0,time:0,hitStop:0,
-  ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,stam:100,enraged:false,fled:false,tiredT:0},
+  severed:false,tiredHurt:0,rage:0,time:0,hitStop:0,
+  parts:{tail:Math.round(100*SPECIES.scale*Math.max(SPECIES.tailMul,.6)),
+         legs:Math.round(120*SPECIES.scale)},
+  ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,swoopCool:9,swooping:false,
+      swoopT:0,dropSlam:false,stam:100,enraged:false,fled:false,tiredT:0},
   slam:[0,0,-99,0],mark:{pos:V(0,0,0),amp:0},carving:null,
 };
 
@@ -1198,7 +1258,8 @@ function combat(dt){
     const pf=boss.actProf;
     if(boss.actT<pf.wind+pf.active+.06){
       const r=nearestPart(boss.jawTip,player.segs);
-      if(r.d<.45){boss._bit=true;sfx.bite();hurtPlayer(game.ai.enraged?30:20,boss.leader);}
+      if(r.d<.45){boss._bit=true;sfx.bite();
+        hurtPlayer(Math.round(AIP.biteDmg*(game.ai.enraged?1.45:1)),boss.leader);}
     }
   }
   // tail swipe: annulus around the hips while the whirl is live — jump it
@@ -1208,7 +1269,7 @@ function combat(dt){
       const dd=Math.hypot(player.leader[0]-boss.hip[0],player.leader[2]-boss.hip[2]);
       if(dd<boss.P.tailLen*1.25&&player.jumpY<.45){
         boss._swipeHit=true;
-        hurtPlayer(game.ai.enraged?26:18,boss.hip);
+        hurtPlayer(Math.round(AIP.swipeDmg*(game.ai.enraged?1.4:1)),boss.hip);
       }
     }
   }
@@ -1239,7 +1300,7 @@ function severTail(){
   game.props={soft,
     hard:[[add(mid,V(0,.18,0)),add(mid,V(0,.181,0)),.07,.07,5,'prop']], // carve beacon
     center:mid,k:.06};
-  game.carveNodes.push({pos:mid,uses:1,loot:['ALPHA REX TAIL']});
+  game.carveNodes.push({pos:mid,uses:1,loot:[BN.toUpperCase()+' TAIL']});
   boss.P.tailLen*=3/boss.P.tailN; boss.P.tailN=3; boss.tail.length=3;
   dmgNum(mid,'SEVERED!','big'); sfx.sever(); cam.shake=Math.max(cam.shake,.5);
   log('Tail severed! Carve it for materials.',true);
@@ -1251,7 +1312,7 @@ function aggro(){
   if(ai.state!=='patrol'||boss.dead)return;
   ai.state='hunt'; boss.roam=false;
   startAction(boss,'roar'); sfx.roar(); cam.shake=Math.max(cam.shake,.5);
-  log('The Alpha Rex has noticed you!',true);
+  log('The '+BN+' has noticed you!',true);
 }
 function enrage(){
   const ai=game.ai;
@@ -1261,7 +1322,7 @@ function enrage(){
   boss.P.speed=bossBaseSpeed*1.28;
   boss.restOn=false;
   startAction(boss,'roar'); sfx.roar(); cam.shake=Math.max(cam.shake,.7);
-  log('The Alpha Rex is ENRAGED!',true);
+  log('The '+BN+' is ENRAGED!',true);
 }
 function deEnrage(){
   game.ai.enraged=false;
@@ -1271,6 +1332,7 @@ function deEnrage(){
 function tired(){
   const ai=game.ai;
   ai.state='tired'; ai.tiredT=8; game.tiredHurt=0;
+  ai.swooping=false; boss.flyOK=false;
   boss.restOn=true;
   if(ai.enraged)deEnrage();
   log('The monster is exhausted — an opening!',true);
@@ -1279,6 +1341,7 @@ function flee(){
   const ai=game.ai;
   if(ai.fled||boss.dead)return;
   ai.fled=true; ai.state='flee'; boss.restOn=false;
+  ai.swooping=false; boss.flyOK=boss.wings; // winged species fly to safety
   if(ai.enraged)deEnrage();
   // retreat to the arena-edge point farthest from the hunter
   let bestT=V(9.5,0,0), bestD=-1;
@@ -1288,15 +1351,16 @@ function flee(){
     if(d>bestD){bestD=d;bestT=c;}
   }
   boss.target=bestT;
-  log('The Alpha Rex limps away…',true);
+  log('The '+BN+' limps away…',true);
 }
 function killBoss(){
   boss.hp=0; boss.dead=true; game.over=true; game.ai.state='dead';
   if(game.ai.enraged)deEnrage();
   boss.restOn=true;
-  game.carveNodes.push({at:'boss',uses:3,loot:['REX SCALE ×2','REX FANG','ALPHA PLATE — RARE!']});
+  const NU=BN.toUpperCase();
+  game.carveNodes.push({at:'boss',uses:3,loot:[NU+' SCALE ×2',NU+' FANG',NU+' PLATE — RARE!']});
   sfx.win(); cam.shake=Math.max(cam.shake,.4);
-  log('The Alpha Rex is slain!',true);
+  log('The '+BN+' is slain!',true);
   const mm=Math.floor(game.time/60),ss=Math.floor(game.time%60);
   setTimeout(()=>banner('QUEST COMPLETE',
     "HUNT TIME "+mm+"'"+String(ss).padStart(2,'0')+'" · CARVE THE CORPSE — E · R TO RESET'),1400);
@@ -1332,7 +1396,7 @@ function bossAI(dt){
     ai.tiredT-=dt;
     if(ai.tiredT<=0||game.tiredHurt>70){
       boss.restOn=false; ai.stam=70; game.tiredHurt=0; ai.state='hunt';
-      log('The Alpha Rex rises again…');
+      log('The '+BN+' rises again…');
     }
     return;
   }
@@ -1347,31 +1411,46 @@ function bossAI(dt){
   // hunt
   if(ai.enraged)ai.stam-=4*dt;
   if(ai.stam<=0){tired();return;}
+  ai.swoopCool-=dt;
+  if(ai.dropSlam&&boss.air<.25){ai.dropSlam=false;onSlam(boss);} // dive lands
+  if(ai.swooping){ // airborne: shadow the hunter, then drop on them
+    ai.swoopT+=dt;
+    boss.target=[player.leader[0]+player.vel[0]*.6,0,player.leader[2]+player.vel[2]*.6];
+    const hd=Math.hypot(player.leader[0]-boss.leader[0],player.leader[2]-boss.leader[2]);
+    if(boss.air>.6&&hd<1.7){ai.swooping=false;boss.flyOK=false;ai.dropSlam=true;}
+    else if(ai.swoopT>6){ai.swooping=false;boss.flyOK=false;} // give up the pass
+    return;
+  }
   if(!boss.act&&!boss.restOn){
     boss.target=[player.leader[0]+player.vel[0]*.25,0,player.leader[2]+player.vel[2]*.25];
     const biteR=2.5*boss.scale;
     const rel=nrm([dvec[0],0,dvec[2]]);
     const cosA=dot([boss.fw[0],0,boss.fw[2]],rel); // where is the hunter, relative to its snout
-    if(dist<boss.P.tailLen*1.15&&cosA<-.1&&ai.atkCool<=0){
+    const eN=ai.enraged;
+    if(HAS_TAIL&&dist<boss.P.tailLen*1.15&&cosA<-.1&&ai.atkCool<=0){
       // hunter is behind it — coil and whirl
-      ai.atkCool=(ai.enraged?1.6:2.6)+Math.random()*.5; ai.stam-=12;
+      ai.atkCool=AIP.atkCd*(eN?.6:1)+Math.random()*.5; ai.stam-=12;
       boss._swipeHit=false;
       boss.target=[boss.leader[0],0,boss.leader[2]];
       boss.act='tailswipe'; boss.actT=0;
-      boss.actProf={wind:ai.enraged?.28:.42,dur:.55,rate:(Math.random()<.5?1:-1)*7,rec:.5};
+      boss.actProf={wind:(eN?.6:1)*.44,dur:.55,rate:(Math.random()<.5?1:-1)*7,rec:.5};
       log('It coils its tail!');
     }else if(dist<biteR&&cosA>.3&&ai.atkCool<=0){
-      ai.atkCool=(ai.enraged?1.2:2.2)+Math.random()*.6; ai.stam-=10;
+      ai.atkCool=AIP.atkCd*(eN?.55:1)+Math.random()*.6; ai.stam-=10;
       boss._bit=false;
-      startStrike(boss,{wind:ai.enraged?.26:.45,active:.22,rec:.55,imp:6.5,jaw:1,recoil:3.2});
-    }else if(ai.enraged&&dist<5.5&&ai.slamCool<=0){
-      ai.slamCool=12; ai.stam-=18;
+      startStrike(boss,{wind:AIP.biteWind*(eN?.6:1),active:.22,rec:.55,imp:6.5,jaw:1,recoil:3.2});
+    }else if((eN||!HAS_TAIL)&&dist<5.5&&ai.slamCool<=0){
+      ai.slamCool=HAS_TAIL?12:8; ai.stam-=18;
       boss._slam=true; startAction(boss,'jump');
+    }else if(boss.wings&&dist>5&&ai.swoopCool<=0){
+      ai.swoopCool=14; ai.stam-=20;
+      ai.swooping=true; ai.swoopT=0; boss.flyOK=true;
+      log('It takes to the air!',true);
     }else if(dist>4.5&&dist<11&&ai.chargeCool<=0){
-      ai.chargeCool=ai.enraged?5:8; ai.stam-=15;
+      ai.chargeCool=eN?5:8; ai.stam-=15;
       boss._chargeHit=false;
       boss.act='charge'; boss.actT=0; boss._struck=false;
-      boss.actProf={wind:ai.enraged?.35:.55,active:.75,imp:11,
+      boss.actProf={wind:AIP.chargeWind*(eN?.55:1),active:.75,imp:AIP.chargeImp,
         aim:()=>add(player.leader,scl(player.vel,.35))};
       log('It paws the ground…');
     }
@@ -1442,7 +1521,19 @@ addEventListener('resize',resize);
 
 // ---------- main loop ----------
 const palBuf=new Float32Array(36);
-banner('QUEST 01 — SLAY THE ALPHA REX','WASD MOVE · CLICK ATTACK · SHIFT DODGE · IT GUARDS THE FAR SIDE',3800);
+{ // quest intro: the body plan is the briefing
+  const tells=[];
+  if(SPECIES.wings)tells.push('WINGS — IT WILL DIVE FROM ABOVE');
+  if(!HAS_TAIL)tells.push('NO TAIL — EXPECT GROUND SLAMS');
+  else if(SPECIES.tailMul>1.15)tells.push('LONG TAIL — NEVER LINGER AT ITS FLANK');
+  if(SPECIES.pairs>=3)tells.push('MANY LEGS — FAST, SKITTERY CHARGES');
+  if(SPECIES.bulk>1.12)tells.push('MASSIVE BUILD — SLOW, BUT IT ENDURES');
+  if(SPECIES.snappy>.7)tells.push('TWITCHY — SHORT TELLS, STAY READY');
+  banner('SLAY '+SPECIES.name,
+    (tells.length?tells.join(' · '):'A BALANCED PREDATOR — READ IT AS YOU FIGHT'),5600);
+  const q2=$('quest2');
+  if(q2)q2.textContent='QUEST 01 · SLAY '+SPECIES.name+' · SPECIES #'+SEED;
+}
 let last=performance.now();
 function frame(now){
   requestAnimationFrame(frame);
