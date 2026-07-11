@@ -13,7 +13,25 @@ smoothly-blended capsules.
 |---|---|
 | ![rex](docs/rex.png) | ![wyvern](docs/wyvern.png) |
 
-## Run it
+## Hunt mode (vertical slice)
+
+Open `hunt.html` — a Monster Hunter-style quest built on the same engine:
+you are a beast hunting a scaled-up **Alpha Rex** in a bounded arena.
+
+- **WASD** move · **click / J** attack · **shift** dash (i-frames) · **space** jump ·
+  **Tab** lock-on · **E** carve · **M** mute · 3 faints = quest failed
+- **The SDF is the hitbox** — hits are one JS evaluation of the enemy's capsule
+  list; the nearest capsule names the part (head crits, legs cripple, tail severs).
+- **Part breaks**: drain the tail pool and it detaches into the world as a
+  carveable prop; wound the legs and the gait stepper limps.
+- **Boss AI** rides the dynamics system: patrol → roar/aggro → bite, charge,
+  jump-slam → **enrage** at 50% HP (f up, ζ down, eyes glow) → exhausted rest
+  (free damage window) → flees at 20% to sleep it off → carve the corpse.
+- Zero keyframes and zero assets throughout — even the sounds are synthesized.
+
+Smoke test: `node test/hunt-smoke.js` drives the whole quest headless.
+
+## Run it (the lab)
 
 Open `index.html` in any browser with WebGL2 — no build step, no dependencies.
 

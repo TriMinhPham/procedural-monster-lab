@@ -1,0 +1,1402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monster Hunt — Lab Slice</title>
+<style>
+  :root{
+    --ink:#ece5d6;
+    --ink-dim:#a89f8c;
+    --glass:rgba(21,20,17,.78);
+    --glass-line:rgba(236,229,214,.12);
+    --amber:#e8b04e;
+    --amber-soft:rgba(232,176,78,.25);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:"Avenir Next","Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  html,body{height:100%;margin:0;background:#20242e;overflow:hidden;
+    font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;}
+
+  .brand{position:fixed;left:20px;top:18px;pointer-events:none;user-select:none;}
+  .brand .t1{font-family:var(--mono);font-size:13px;letter-spacing:.28em;color:var(--ink);}
+  .brand .t1 b{color:var(--amber);font-weight:600;}
+  .brand .t2{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--ink-dim);margin-top:6px;}
+  .hints{position:fixed;left:20px;bottom:16px;font-family:var(--mono);font-size:10px;
+    letter-spacing:.1em;color:var(--ink-dim);pointer-events:none;user-select:none;}
+  .hints span{color:var(--ink);}
+
+  /* ---------- hunt HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;font-family:var(--mono);}
+  #hpwrap{position:fixed;left:20px;top:64px;width:260px;}
+  #hpbar{height:10px;border-radius:5px;border:1px solid var(--glass-line);
+    background:rgba(0,0,0,.45);overflow:hidden;}
+  #hpfill{height:100%;width:100%;border-radius:4px;background:linear-gradient(90deg,#7fae4e,#a5c95d);
+    transition:width .18s ease,background .3s;}
+  #hpfill.low{background:linear-gradient(90deg,#c04b32,#d96f4e);}
+  #stambar{height:5px;margin-top:4px;border-radius:3px;border:1px solid var(--glass-line);
+    background:rgba(0,0,0,.45);overflow:hidden;}
+  #stamfill{height:100%;width:100%;background:#e8b04e;transition:width .12s;}
+  #faints{margin-top:6px;font-size:11px;letter-spacing:.3em;color:#d96f4e;}
+  #huntlog{position:fixed;left:20px;bottom:52px;display:flex;flex-direction:column-reverse;gap:4px;}
+  #huntlog div{font-size:11px;letter-spacing:.08em;color:var(--ink);
+    background:var(--glass);border:1px solid var(--glass-line);border-radius:6px;
+    padding:5px 10px;opacity:1;transition:opacity 1s;}
+  #huntlog div.amber{color:var(--amber);}
+  #huntlog div.fade{opacity:0;}
+  #prompt{position:fixed;left:50%;bottom:22%;transform:translateX(-50%);
+    font-size:12px;letter-spacing:.22em;color:var(--amber);background:var(--glass);
+    border:1px solid var(--amber-soft);border-radius:8px;padding:8px 16px;display:none;}
+  #banner{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;display:none;}
+  #banner .big{font-size:30px;letter-spacing:.34em;color:var(--amber);
+    text-shadow:0 2px 18px rgba(0,0,0,.6);}
+  #banner .sub{font-size:11px;letter-spacing:.18em;color:var(--ink);margin-top:10px;line-height:1.9;}
+  .dmg{position:fixed;font-size:15px;font-weight:700;color:#f2d16b;
+    text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;
+    animation:dmgfloat .8s ease-out forwards;}
+  .dmg.big{font-size:21px;color:#e86a3e;}
+  .dmg.hurt{color:#d94b4b;}
+  @keyframes dmgfloat{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-46px)}}
+  #flash{position:fixed;inset:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(200,30,20,.45));
+    opacity:0;pointer-events:none;transition:opacity .1s;}
+  .fail{position:fixed;inset:0;display:none;place-items:center;background:#20242e;
+    color:var(--ink);font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-align:center;padding:24px;}
+  @media (max-width:700px){ .brand .t2{display:none;} .hints{display:none;} }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<div class="fail" id="fail"><div>This specimen needs WebGL2.<br>Try a desktop browser with hardware acceleration on.</div></div>
+
+<div class="brand">
+  <div class="t1">MONSTER <b>HUNT</b></div>
+  <div class="t2">QUEST 01 · SLAY THE ALPHA REX · SCARRED CRATER</div>
+</div>
+<div class="hints"><span>WASD</span> MOVE · <span>CLICK/J</span> ATTACK · <span>⇧</span> DASH i-frames · <span>␣</span> JUMP · <span>TAB</span> LOCK-ON · <span>E</span> CARVE · <span>M</span> MUTE · <span>DRAG</span> ORBIT</div>
+
+<div id="hud">
+  <div id="hpwrap">
+    <div id="hpbar"><div id="hpfill"></div></div>
+    <div id="stambar"><div id="stamfill"></div></div>
+    <div id="faints">●●●</div>
+  </div>
+  <div id="huntlog"></div>
+  <div id="prompt"></div>
+  <div id="banner"><div class="big"></div><div class="sub"></div></div>
+  <div id="flash"></div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   PROCEDURAL MONSTER LAB
+   Phase II  — SDF tube method: the body is blended round-cones,
+               raymarched in a fragment shader (no mesh, no rig).
+   Phase I/IV— Universal Limb Class: legs, antennae, pedipalps
+               share one solver; beast legs get the 3-bone zigzag.
+   Phase V   — Second-order dynamics (f, ζ, r) with semi-implicit
+               Euler and the k2 clamp that keeps T < T_critical.
+   Phase VI  — gait stepper, bob, tail chain, anticipation.
+   ============================================================ */
+
+// ---------- tiny vec3 ----------
+const V=(x=0,y=0,z=0)=>[x,y,z];
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const scl=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const len=a=>Math.hypot(a[0],a[1],a[2]);
+const nrm=a=>{const l=len(a)||1e-9;return scl(a,1/l);};
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+
+// ---------- Phase V: second-order dynamics ----------
+// y'' + k1 y' + ... — integrated with semi-implicit Euler.
+// k2 is clamped each step so T never exceeds T_critical
+// (sqrt(4k2+k1^2)-k1); physically a hair off, never explodes.
+class SOD3{
+  constructor(f,z,r,x0){this.set(f,z,r);this.xp=[...x0];this.y=[...x0];this.yd=[0,0,0];}
+  set(f,z,r){const w=2*Math.PI*f;this.k1=z/(Math.PI*f);this.k2=1/(w*w);this.k3=r*z/w;}
+  reset(x0){this.xp=[...x0];this.y=[...x0];this.yd=[0,0,0];}
+  update(T,x){
+    const k2s=Math.max(this.k2, T*T/2+T*this.k1/2, T*this.k1);
+    for(let i=0;i<3;i++){
+      const xd=(x[i]-this.xp[i])/T;
+      this.y[i]+=T*this.yd[i];                                  // position first…
+      this.yd[i]+=T*(x[i]+this.k3*xd-this.y[i]-this.k1*this.yd[i])/k2s; // …then velocity
+    }
+    this.xp=[...x];
+    return this.y;
+  }
+}
+
+// ---------- Phase I: the animal-group presets ----------
+const PRESETS={
+  skink:{ // reptile baseline: two-bone sprawled limbs, undulating spine
+    pairs:2, mode:'sprawl',
+    bodyLen:1.05, chestH:.30, hipH:.28, chestR:.20, midR:.185, hipR:.16,
+    neckLen:.24, neckUp:.05, headR:.125, headLen:.34, snout:.5,
+    lu:.30, ll:.34, legR:.05, stance:[.46,.44], lead:[.16,-.08],
+    stepThresh:.30, stepDur:.17, stepH:.11, speed:1.5, stride:.55,
+    undulate:.07, tailN:6, tailLen:1.15, bob:.015, post:.05,
+    ears:false, antennae:false, palps:false, spikesDefault:true,
+    dyn:[1.6,.5,1.2], pal:'moss', k:.055
+  },
+  beast:{ // the Mammal Problem: three-bone zigzag legs
+    pairs:2, mode:'zigzag',
+    bodyLen:.92, chestH:.60, hipH:.58, chestR:.235, midR:.20, hipR:.185,
+    neckLen:.30, neckUp:.14, headR:.13, headLen:.38, snout:.45,
+    lu:.33, ll:.29, fs:.20, legR:.055, stance:[.26,.24], lead:[.14,-.10],
+    stepThresh:.34, stepDur:.15, stepH:.14, speed:2.1, stride:.7,
+    undulate:0, tailN:5, tailLen:.85, bob:.03, post:.9,
+    ears:true, antennae:false, palps:false, spikesDefault:false,
+    dyn:[2.2,.7,.9], pal:'ember', k:.05
+  },
+  bug:{ // invertebrate: extra leg sets + antennae from the same limb class
+    pairs:3, mode:'spider',
+    bodyLen:.62, chestH:.38, hipH:.38, chestR:.19, midR:.17, hipR:.16,
+    neckLen:.20, neckUp:.02, headR:.11, headLen:.22, snout:.85,
+    lu:.42, ll:.50, legR:.032, stance:[.52,.66,.52], lead:[.34,0,-.30],
+    stepThresh:.22, stepDur:.09, stepH:.10, speed:2.5, stride:.38,
+    undulate:0, tailN:0, tailLen:0, bob:.012, abdomen:true, post:.35,
+    ears:false, antennae:true, palps:true, spikesDefault:false,
+    dyn:[3.5,.45,1.6], pal:'tide', k:.04
+  },
+  rex:{ // theropod: biped zigzag legs, tiny arms, big jaw, counterweight tail
+    pairs:1, mode:'zigzag', soloU:.8,
+    bodyLen:1.35, chestH:.78, hipH:.88, chestR:.26, midR:.29, hipR:.33,
+    neckLen:.30, neckUp:.10, headR:.23, headLen:.62, snout:.7,
+    jaw:true, teeth:true, arms:true,
+    lu:.46, ll:.40, fs:.30, legR:.085, stance:[.24], lead:[.10],
+    stepThresh:.44, stepDur:.22, stepH:.22, speed:2.2, stride:1.05,
+    undulate:0, tailN:8, tailLen:1.5, bob:.05, post:.95,
+    ears:false, antennae:false, palps:false, spikesDefault:false,
+    dyn:[1.5,.8,.7], pal:'fossil', k:.06
+  },
+  wyvern:{ // bird group: biped + wings, flies to far calls
+    pairs:1, mode:'zigzag', soloU:.75,
+    bodyLen:.95, chestH:.58, hipH:.62, chestR:.22, midR:.19, hipR:.20,
+    neckLen:.34, neckUp:.16, headR:.13, headLen:.42, snout:.5, jaw:true,
+    lu:.34, ll:.30, fs:.22, legR:.05, stance:[.22], lead:[.08],
+    stepThresh:.34, stepDur:.16, stepH:.16, speed:2.0, stride:.75,
+    undulate:0, tailN:6, tailLen:1.2, bob:.03, post:.95,
+    wings:true, wingScale:1.05,
+    ears:false, antennae:false, palps:false, spikesDefault:true,
+    dyn:[2.4,.6,1.1], pal:'dusk', k:.05
+  }
+};
+
+// pigment: body, belly, limb, spike, hat, accent
+const PALETTES={
+  moss :['#7ba95a','#e9e2c4','#4d7a52','#2e5546','#d96f4e','#f2d16b'],
+  ember:['#d96844','#f6d7a2','#9c4030','#552334','#46b8a5','#f2e2b3'],
+  tide :['#4f8fa8','#d8ead9','#35617e','#28405c','#e5975f','#efd9a0'],
+  dusk :['#8a6fae','#e3d3e9','#5d4a85','#3d2f5c','#e8b04e','#f0e6d2'],
+  fossil:['#7d6a47','#d3c497','#5d4e35','#3e3122','#4db8a8','#e8b04e'],
+};
+const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
+
+// ---------- creature state (multi-instance) ----------
+const ARENA_R=13;
+const ROCKS=[[3.6,-4.4,1.15],[-5.2,2.6,1.4],[1.4,5.6,.95]]; // x,z,radius
+
+// scale a preset: lengths by s, speed sub-linearly so big things feel heavy
+function scalePreset(base,s){
+  const P=JSON.parse(JSON.stringify(base));
+  for(const key of ['bodyLen','chestH','hipH','chestR','midR','hipR','neckLen','neckUp',
+    'headR','headLen','lu','ll','fs','legR','stepH','stride','tailLen','k','bob'])
+    if(P[key]!==undefined)P[key]*=s;
+  P.stance=P.stance.map(v=>v*s); P.lead=P.lead.map(v=>v*s);
+  P.stepThresh*=s; P.speed*=Math.pow(s,.6);
+  return P;
+}
+
+function makeCreature(name,opts={}){
+  const P=scalePreset(PRESETS[name],opts.scale||1);
+  if(opts.speed)P.speed*=opts.speed;
+  const pos=opts.pos||V(0,0,0);
+  const cr={
+    P, name, scale:opts.scale||1, isPlayer:!!opts.isPlayer,
+    leader:[pos[0],P.chestH,pos[2]], vel:V(), target:[pos[0],0,pos[2]], home:[pos[0],0,pos[2]],
+    chest:null, hip:V(-1,0,0), phase:0, speedN:0,
+    legs:[], tail:[], antTips:[],
+    sodChest:null, sodLook:null,
+    nextThink:0, idleLook:0,
+    legScale:1, radScale:1, wobble:0,
+    spikes:P.spikesDefault, hat:false, roam:false,
+    pal:opts.pal||P.pal, time:0,
+    wings:!!P.wings, wOpen:0, air:0, flap:0,
+    restOn:false, rest:0,
+    act:null, actT:0, _struck:false, _slam:false, jawEnv:0,
+    jumpY:0, jumpVy:0, crouch:0, imp:V(), fw:V(1,0,0),
+    eyeScale:1, blinkNext:2, blinkT:-1,
+    pairsN:P.pairs, posture:P.post, hMul:1,
+    // hunt state
+    hp:opts.hp||100, maxHp:opts.hp||100, dead:false,
+    iFrames:0, moveDir:V(), limpLeg:-1,
+    jawTip:V(1,0,0), headPos:V(1,.5,0), segs:null,
+  };
+  cr.chest=[...cr.leader];
+  cr.sodChest=new SOD3(...P.dyn,cr.leader);
+  cr.sodLook =new SOD3(P.dyn[0]*1.2,P.dyn[1],P.dyn[2],add(cr.leader,V(1,0,0)));
+  cr.hip=add(cr.leader,V(-P.bodyLen,0,0)); cr.hip[1]=P.hipH;
+  buildLegs(cr,P.pairs);
+  const segL=P.tailN?P.tailLen/P.tailN:0;
+  for(let i=0;i<P.tailN;i++) cr.tail.push(add(cr.hip,V(-(i+1)*segL,0,0)));
+  cr.antTips=[new SOD3(2.8,.32,1.8,add(cr.leader,V(0,.5,.2))),
+              new SOD3(2.8,.32,1.8,add(cr.leader,V(0,.5,-.2)))];
+  return cr;
+}
+function setDyn(cr,f,z,r){cr.sodChest.set(f,z,r);cr.sodLook.set(f*1.2,z,r);}
+
+// ---------- Phase IV: limb solvers ----------
+// two-bone analytic IK; `pole` says which way the joint vertex points
+function solve2(S,T,l1,l2,pole){
+  const d=sub(T,S), L=len(d)||1e-6, dir=scl(d,1/L);
+  const dl=clamp(L,.02,(l1+l2)*.995);
+  const Tc=add(S,scl(dir,dl));
+  let cA=(l1*l1+dl*dl-l2*l2)/(2*l1*dl); cA=clamp(cA,-1,1);
+  const sA=Math.sqrt(1-cA*cA);
+  let n=sub(pole,scl(dir,dot(pole,dir)));
+  const nl=len(n); n=nl<1e-4?V(0,1,0):scl(n,1/nl);
+  return {knee:add(S,add(scl(dir,l1*cA),scl(n,l1*sA))),foot:Tc};
+}
+
+// ---------- per-frame simulation ----------
+function simulate(cr,dt){
+  const st=cr, P=cr.P;
+  st.time+=dt;
+  const t=st.time;
+  st.iFrames=Math.max(0,st.iFrames-dt);
+  if(st.dead){st.restOn=true;st.act=null;st.moveDir=V();}
+
+  // --- actions: procedural overlays, no keyframes ---
+  if(st.act){
+    st.actT+=dt; const q=st.actT;
+    if(st.act==='attack'){
+      st.jawEnv=Math.sin(Math.PI*clamp(q/.55,0,1));
+      if(q<.16)st.imp=add(st.imp,scl(st.fw,-2.6*dt));            // wind-up recoil
+      else if(!st._struck){st._struck=true;st.imp=add(st.imp,scl(st.fw,4.4));} // lunge
+      if(q>.7){st.act=null;st._struck=false;}
+    }else if(st.act==='roar'){
+      st.jawEnv=Math.sin(Math.PI*clamp(q/.9,0,1))*.95;
+      if(q>.95)st.act=null;
+    }else if(st.act==='dash'){
+      if(q>.38)st.act=null;
+    }else if(st.act==='jump'){
+      st.crouch=Math.min(q/.14,1);                               // squash before…
+      if(q>=.14){st.act=null;if(st.jumpY<=0)st.jumpVy=3.4;}      // …launch
+    }
+  }else st.jawEnv*=Math.exp(-9*dt);
+  st.crouch*=Math.exp(-6*dt);
+  st.imp=scl(st.imp,Math.exp(-5.5*dt));
+  if(st.jumpVy!==0||st.jumpY>0){                                 // ballistic arc
+    st.jumpVy-=9.5*dt; st.jumpY+=st.jumpVy*dt;
+    if(st.jumpY<=0){st.jumpY=0;st.jumpVy=0;st.crouch=Math.max(st.crouch,.8);
+      if(st._slam){st._slam=false;onSlam(st);}}
+  }
+  st.rest+=((st.restOn?1:0)-st.rest)*Math.min(1,dt*2.2);
+
+  // --- steering: player drives target from held keys, AI sets it directly ---
+  if(st.isPlayer&&!st.dead){
+    if(len(st.moveDir)>.1)st.target=add([st.leader[0],0,st.leader[2]],scl(st.moveDir,2.5));
+    else st.target=[st.leader[0],0,st.leader[2]];
+  }
+  const toT=sub(st.target,st.leader); toT[1]=0;
+  const dist=len(toT);
+  // winged creatures take off for far calls, land near them
+  st.air+=(((st.wings&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
+  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95);
+  const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*1.8)):V();
+  const k=1-Math.exp(-4*dt);
+  st.vel=mix(st.vel,desired,k);
+  st.leader=add(st.leader,scl(add(st.vel,st.imp),dt));
+  // arena bounds + boulder push-out
+  {
+    const rr=Math.hypot(st.leader[0],st.leader[2]);
+    if(rr>ARENA_R-.6){const f2=(ARENA_R-.6)/rr;st.leader[0]*=f2;st.leader[2]*=f2;}
+    for(const rk of ROCKS){
+      if(st.jumpY>rk[2]*.9||st.air>.5)continue;
+      const dx=st.leader[0]-rk[0],dz=st.leader[2]-rk[2];
+      const dd=Math.hypot(dx,dz),rmin=rk[2]*.8+P.chestR;
+      if(dd<rmin&&dd>1e-4){st.leader[0]=rk[0]+dx/dd*rmin;st.leader[2]=rk[2]+dz/dd*rmin;}
+    }
+  }
+  // height: posture & leg morphs, rest, jump, flight altitude
+  const postHF=P.mode==='zigzag'?1:(0.85+0.5*st.posture)/(0.85+0.5*P.post);
+  const legHF=P.mode==='zigzag'?(1+(st.legScale-1)*.8):1;
+  st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest);
+  const groundY=P.chestH*st.hMul;
+  st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY;
+  const speed=len(st.vel);
+  st.speedN=clamp(speed/P.speed,0,1);
+
+  // --- free-roam brain (patrol wander near home; off for the player) ---
+  if(st.roam&&!st.restOn&&dist<.5&&t>st.nextThink){
+    if(Math.random()<.6){
+      const a=Math.random()*6.283, r=1.2+Math.random()*4;
+      st.target=[st.home[0]+Math.cos(a)*r,0,st.home[2]+Math.sin(a)*r];
+      st.nextThink=t+.5;
+    }else st.nextThink=t+1.5+Math.random()*2.5;
+  }
+
+  // --- Phase V: body follows the leader through the dynamics system ---
+  const chestS=st.sodChest.update(dt,st.leader);
+  st.phase+=speed*dt/P.stride;
+  // wingbeat: open in the air, flush against the body on the ground
+  const wTgt=st.wings?(st.air>.03?1:(st.speedN>.75?.3:0)):0;
+  st.wOpen+=(wTgt-st.wOpen)*Math.min(1,dt*3);
+  if(st.wOpen>.02)st.flap+=dt*Math.PI*2*(1.5+2.1*st.air);
+  const bobY=Math.sin(st.phase*Math.PI*4)*P.bob*st.speedN*(1-st.air) // gait bob
+            +Math.sin(t*1.7)*.006*(1+st.rest*1.6)                    // breathing
+            +st.air*Math.sin(st.flap)*.05;                           // wingbeat heave
+  st.chest=[chestS[0],chestS[1]+bobY,chestS[2]];
+
+  // --- spine: hip trails the chest like a rope (bends through turns) ---
+  let hv=sub(st.hip,st.chest); hv[1]=0;
+  if(len(hv)<1e-4)hv=V(-1,0,0);
+  const hipXZ=add([st.chest[0],0,st.chest[2]],scl(nrm(hv),P.bodyLen));
+  st.hip=[hipXZ[0],st.chest[1]+(P.hipH-P.chestH)*st.hMul*(1-st.air)+st.air*.16,hipXZ[2]];
+  let fw=sub(st.chest,st.hip); fw[1]=0; fw=nrm(fw);
+  const side=nrm(cross(V(0,1,0),fw));
+
+  // --- look point (also second-order → overshoot/anticipation shows in the head) ---
+  let want;
+  if(st.act==='attack'&&st.actT>.12) want=add(st.chest,add(scl(st.fw,2.2),V(0,-.15,0)));
+  else if(st.rest>.4) want=add(st.chest,add(scl(st.fw,.9),V(0,-st.rest*.45,0)));
+  else if(speed>.3) want=[st.target[0],.35,st.target[2]];
+  else{
+    if(t>st.idleLook){
+      st.idleLook=t+1+Math.random()*1.6;
+      st._look=Math.random()<.35?[cam.pos[0],1.1,cam.pos[2]]
+        :add(st.chest,add(scl(fw,1.4),V((Math.random()-.5)*1.6,.1+Math.random()*.5,(Math.random()-.5)*1.6)));
+    }
+    want=st._look||add(st.chest,scl(fw,1.5));
+  }
+  const lookS=st.sodLook.update(dt,want);
+
+  // --- gait: feet hold the ground, step home when stretched (trot / tripod) ---
+  const rs=st.radScale, ls=st.legScale;
+  const restY=P.legR*rs*.8;
+  const spinePt=u=>mix(st.chest,st.hip,u);
+  const stanceMul=(P.mode==='zigzag'?1.15-.2*st.posture:1.3-.75*st.posture)
+                 *(P.mode==='sprawl'?ls:1)*(1-.45*st.rest);
+  const tucked=st.air>.5||st.jumpY>.14;
+  for(const leg of st.legs){
+    if(tucked){ // feet fold under the body in flight and mid-jump
+      const tuck=add(spinePt(leg.u),add(scl(side,leg.s*leg.stance*.5),
+        add(scl(fw,-.08),V(0,-(P.lu+P.ll)*ls*.42,0))));
+      leg.foot=mix(leg.foot,tuck,Math.min(1,dt*8));
+      leg.stepping=false;
+      continue;
+    }
+    const home=add(add(spinePt(leg.u),scl(fw,leg.lead*(1-.7*st.rest))),
+                   scl(side,leg.s*leg.stance*stanceMul));
+    home[1]=restY;
+    const limp=st.legs.indexOf(leg)===st.limpLeg; // wounded leg drags
+    if(leg.stepping){
+      leg.t+=dt/(P.stepDur*(limp?1.7:1));
+      const e=leg.t>=1?1:leg.t*leg.t*(3-2*leg.t);
+      leg.foot=mix(leg.from,leg.to,e);
+      leg.foot[1]=restY+Math.sin(Math.PI*Math.min(leg.t,1))*P.stepH*ls*(limp?.25:1);
+      if(leg.t>=1){leg.stepping=false;leg.foot=[...leg.to];leg.cool=.06;}
+    }else{
+      leg.cool-=dt;
+      const err=Math.hypot(leg.foot[0]-home[0],leg.foot[2]-home[2]);
+      const otherBusy=st.legs.some(o=>o!==leg&&o.group!==leg.group&&o.stepping);
+      if(err>P.stepThresh*ls&&leg.cool<=0&&(!otherBusy||err>P.stepThresh*ls*2)){
+        leg.stepping=true;leg.t=0;leg.from=[...leg.foot];
+        leg.to=add(home,scl(st.vel,P.stepDur*2.2)); leg.to[1]=restY;
+      }
+    }
+  }
+
+  st.fw=fw;
+  // blink (and half-lidded eyes while resting)
+  if(st.blinkT<0&&t>st.blinkNext){st.blinkT=0;st.blinkNext=t+2.5+Math.random()*3;}
+  if(st.blinkT>=0){st.blinkT+=dt;if(st.blinkT>.13)st.blinkT=-1;}
+  const bl=st.blinkT>=0?Math.sin(Math.PI*st.blinkT/.13):0;
+  st.eyeScale=st.dead?.08:(1-.8*bl)*(1-.5*st.rest);
+  if(st.dead)st.jawEnv=Math.max(st.jawEnv,.22); // slack jaw
+  return {fw,side,lookS,t};
+}
+
+// legs from the Universal Limb Class — any pair count, params sampled along the spine
+function sampleArr(arr,j,n){
+  if(n<=1||arr.length===1)return arr[0];
+  const t=j/(n-1)*(arr.length-1),i=Math.floor(t),f=t-i;
+  return arr[Math.min(i,arr.length-1)]*(1-f)+arr[Math.min(i+1,arr.length-1)]*f;
+}
+function buildLegs(cr,n){
+  const st=cr, P=cr.P;
+  st.pairsN=n;st.legs=[];
+  const us=n===1?[P.soloU!==undefined?P.soloU:.5]
+    :n===2?[.02,.98]:Array.from({length:n},(_,j)=>j/(n-1));
+  for(let j=0;j<n;j++)for(const s of[1,-1])
+    st.legs.push({j,s,u:us[j],stance:sampleArr(P.stance,j,n),lead:sampleArr(P.lead,j,n),
+      group:(j+(s>0?0:1))%2,foot:[st.leader[0],.04,st.leader[2]+s*.3],
+      stepping:false,t:0,from:V(),to:V(),cool:0});
+}
+
+// ---------- Phase II/III: emit the tube list (per creature, part-tagged) ----------
+function buildSkeleton(cr,dt){
+  const st=cr, P=cr.P;
+  const {fw,side,lookS,t}=simulate(cr,dt);
+  const up=V(0,1,0), rs=st.radScale, ls=st.legScale;
+  const soft=[],hard=[];
+  const S=(a,b,r1,r2,m,list,tag)=>list.push([a, (a===b?add(b,V(0,1e-4,0)):b), r1,r2,m,tag||'body']);
+
+  // torso tube (with skink undulation)
+  const lat=Math.sin(st.phase*Math.PI*2)*P.undulate*st.speedN;
+  const midPt=add(mix(st.chest,st.hip,.5),scl(side,lat));
+  const breathe=1+Math.sin(t*1.7)*.02;
+  S(st.chest,midPt,P.chestR*rs*breathe,P.midR*rs,1,soft);
+  S(midPt,st.hip,P.midR*rs,P.hipR*rs,1,soft);
+  if(P.abdomen){ // bug: thorax → fat abdomen
+    const tip=add(add(st.hip,scl(fw,-.55)),V(0,.07+Math.sin(t*3)*.015,0));
+    S(st.hip,tip,P.hipR*rs*1.5,P.hipR*rs*.55,1,soft);
+  }
+
+  // neck + head, aimed by the look dynamics
+  const neckBase=add(st.chest,add(scl(fw,P.chestR*.7),V(0,P.neckUp,0)));
+  let lookDir=nrm(sub(lookS,neckBase));
+  lookDir=nrm(mix(fw,lookDir,.6));
+  lookDir[1]=clamp(lookDir[1],-.45,.55); lookDir=nrm(lookDir);
+  const head=add(neckBase,scl(lookDir,P.neckLen));
+  head[1]+=Math.sin(st.phase*Math.PI*4+1.3)*P.bob*.5*st.speedN; // head bob
+  const hf=lookDir, hs=nrm(cross(up,hf)), hu=nrm(cross(hf,hs));
+  st.headPos=head; st.jawTip=add(head,scl(hf,P.headLen*.55)); // combat probe points
+  S(neckBase,head,P.chestR*rs*.62,P.headR*rs*.95,1,soft);
+  S(sub(head,scl(hf,P.headLen*.35)),add(head,scl(hf,P.headLen*.5)),
+    P.headR*rs,P.headR*rs*P.snout,1,soft,'head');
+
+  // jaw — hinges open during attacks
+  if(P.jaw){
+    const jp=add(head,add(scl(hf,-P.headLen*.05),scl(hu,-P.headR*rs*.25)));
+    const ja=.16+st.jawEnv*.55;
+    const jd=nrm(add(scl(hf,Math.cos(ja)),scl(hu,-Math.sin(ja))));
+    S(jp,add(jp,scl(jd,P.headLen*.55)),P.headR*rs*.5,P.headR*rs*.22,1,soft,'head');
+  }
+
+  // ears
+  if(P.ears)for(const s of[1,-1]){
+    const b=add(head,add(scl(hu,P.headR*.8),add(scl(hs,s*P.headR*.6),scl(hf,-P.headR*.25))));
+    S(b,add(b,add(scl(hu,.16),add(scl(hs,s*.05),scl(hf,-.05)))),.05*rs,.012,1,soft);
+  }
+
+  // wings — flush along the body when folded, flapping limb-fan when open
+  if(st.wings){
+    const wsc=(P.wingScale||1)*(P.chestR/.22);
+    const open=st.wOpen, fl=st.flap;
+    for(const s of[1,-1]){
+      const sh=add(st.chest,add(scl(side,s*P.chestR*rs*.7),V(0,P.chestR*rs*.4,0)));
+      const F1=.35+Math.sin(fl)*.75, F2=.10+Math.sin(fl-.7)*.95;
+      const d1=add(scl(side,s*Math.cos(F1)),V(0,Math.sin(F1),0));
+      const d2=add(scl(side,s*Math.cos(F2)),V(0,Math.sin(F2),0));
+      const eO=add(sh,add(scl(d1,.34*wsc),scl(fw,-.04)));
+      const wO=add(eO,add(scl(d2,.36*wsc),scl(fw,-.08)));
+      const tO=add(wO,add(scl(d2,.30*wsc),scl(fw,-.16)));
+      const eF=add(sh,add(scl(fw,-.22*wsc),scl(side,s*.03)));
+      const wF=add(eF,add(scl(fw,-.26*wsc),V(0,-.02,0)));
+      const tF=add(wF,scl(fw,-.24*wsc));
+      const e=mix(eF,eO,open),w=mix(wF,wO,open),tp=mix(tF,tO,open);
+      S(sh,e,.062*wsc,.048*wsc,2,soft);
+      S(e,w,.048*wsc,.036*wsc,2,soft);
+      S(w,tp,.036*wsc,.014*wsc,6,soft);
+      for(let m=0;m<4;m++){ // membrane struts fanning backward
+        const an=mix(e,tp,m/3);
+        const bk=add(scl(fw,-(.42-.08*m)*wsc),V(0,-.09*open,0));
+        S(an,add(an,bk),.032*wsc,.008,2,soft);
+      }
+    }
+  }
+
+  // rex arms — same solver, comically short
+  if(P.arms)for(const s of[1,-1]){
+    const shA=add(st.chest,add(scl(fw,P.chestR*rs*.55),
+      add(scl(side,s*P.chestR*rs*.6),V(0,-P.chestR*rs*.1,0))));
+    const tgt=add(shA,add(scl(fw,.16),V(0,-.18+Math.sin(t*3+s)*.012,0)));
+    const {knee:el,foot:hd}=solve2(shA,tgt,.15,.13,add(scl(fw,-1),V(0,-.3,0)));
+    S(shA,el,.05,.04,2,soft); S(el,hd,.04,.025,2,soft);
+  }
+
+  // Phase IV legs — one Universal Limb Class, different pole vectors
+  for(const leg of st.legs){
+    const lgTag='leg'+st.legs.indexOf(leg);
+    const bodyR=(P.chestR+(P.hipR-P.chestR)*leg.u)*rs;
+    const spine=mix(st.chest,st.hip,leg.u);
+    const lu=P.lu*ls, ll=P.ll*ls, lr=P.legR*rs;
+    if(P.mode==='zigzag'){
+      // the Mammal Problem: solve hip→ankle two-bone, hang the metatarsal below —
+      // the push/pull that fools a 2-bone solver into a 3-bone silhouette
+      const hipJ=add(spine,add(scl(side,leg.s*bodyR*.55),V(0,-bodyR*.15,0)));
+      const fs=P.fs*ls;
+      const ankleT=add(leg.foot,add(V(0,fs*.85,0),scl(fw,-fs*.35)));
+      const pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
+      const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
+      S(hipJ,knee,lr*1.5,lr,2,soft,lgTag);
+      S(knee,ank,lr,lr*.8,2,soft,lgTag);
+      S(ank,add(leg.foot,scl(fw,.09)),lr*.8,lr*.6,2,soft,lgTag);
+    }else{
+      // posture morphs the joint: sprawled side-poles → upright forward-poles
+      const out=(P.mode==='spider'?.95:.9)-.4*st.posture;
+      const hipJ=add(spine,add(scl(side,leg.s*bodyR*out),V(0,-bodyR*(.05+.25*st.posture),0)));
+      const pole=nrm(mix(add(V(0,.7,0),scl(side,leg.s)),
+                         add(V(0,1.3,0),scl(fw,.4)),st.posture));
+      const {knee,foot}=solve2(hipJ,leg.foot,lu,ll,pole);
+      S(hipJ,knee,lr*1.4,lr,2,soft,lgTag);
+      S(knee,foot,lr,lr*.65,2,soft,lgTag);
+    }
+  }
+
+  // tail — a follow-chain wobble tower
+  if(P.tailN){
+    const segL=P.tailLen/P.tailN;
+    let prev=st.hip;
+    for(let i=0;i<P.tailN;i++){
+      const sw=Math.sin(st.phase*Math.PI*2-i*.55)*(.16*st.speedN+.04)
+              +Math.sin(t*1.3+i*.4)*.06;
+      const rest=nrm(add(scl(fw,-1),add(V(0,-.06+i*.03,0),scl(side,sw))));
+      let dir=nrm(sub(st.tail[i],prev));
+      dir=nrm(mix(dir,rest,clamp(dt*4,0,1)));
+      st.tail[i]=add(prev,scl(dir,segL));
+      st.tail[i][1]=Math.max(st.tail[i][1],.03);
+      const r1=(P.hipR*.7)*(1-i/P.tailN)*rs+.015;
+      const r2=(P.hipR*.7)*(1-(i+1)/P.tailN)*rs+.012;
+      S(prev,st.tail[i],r1,r2,1,soft,'tail');
+      prev=st.tail[i];
+    }
+  }
+
+  // antennae — same limb code, offsets point up (Phase III)
+  if(P.antennae)st.antTips.forEach((sod,i)=>{
+    const s=i?-1:1;
+    const base=add(head,add(scl(hu,P.headR*.7),scl(hs,s*P.headR*.4)));
+    const restT=add(base,scl(nrm(add(scl(hu,.85),add(scl(hf,-.35),scl(hs,s*.3)))),.5));
+    const tip=sod.update(dt,restT);
+    const mid=add(mix(base,tip,.5),scl(hu,.06));
+    S(base,mid,.02,.014,2,soft);
+    S(mid,tip,.014,.02,6,soft); // accent bulb tip
+  });
+  // pedipalps — shortened, pointed downward
+  if(P.palps)for(const s of[1,-1]){
+    const b=add(head,add(scl(hf,P.headR*.7),add(scl(hs,s*P.headR*.45),scl(hu,-P.headR*.2))));
+    const wig=Math.sin(t*7+s)*.02;
+    S(b,add(b,add(scl(hf,.15),add(V(0,-.10,0),scl(hs,s*wig*3)))),.028,.012,2,soft);
+  }
+
+  // dorsal spikes
+  if(st.spikes){
+    for(let i=0;i<5;i++){
+      const u=.08+i*.2;
+      const p=mix(st.chest,st.hip,u);
+      const r=(P.chestR+(P.hipR-P.chestR)*u)*rs;
+      const b=add(p,V(0,r*.72,0));
+      S(b,add(b,add(V(0,.11+r*.3,0),scl(fw,-.05))),r*.28,.006,3,soft);
+    }
+  }
+
+  // hard prims (plain min — they stay crisp): eyes + hat
+  for(const s of[1,-1]){
+    const e=add(head,add(scl(hf,P.headLen*.16),add(scl(hs,s*P.headR*.72),scl(hu,P.headR*.34))));
+    const er=Math.max(P.headR*(P.mode==='spider'?.42:.3)*st.eyeScale,.012);
+    S(e,e,er,er,4,hard,'head');
+  }
+  if(P.teeth)for(let i=0;i<3;i++){
+    const b=add(head,add(scl(hf,P.headLen*(.14+.13*i)),scl(hu,-P.headR*rs*.40)));
+    S(b,add(b,add(scl(hu,-.065),scl(hf,.015))),.02,.004,7,hard,'head');
+  }
+  if(st.hat){
+    const b=add(head,scl(hu,P.headR*.85));
+    const tip=add(b,scl(nrm(add(hu,scl(hf,.15))),.33));
+    S(b,tip,.14,.012,5,hard);
+    S(tip,tip,.05,.05,6,hard);
+  }
+
+  st.segs={soft,hard,center:mix(st.chest,st.hip,.5),k:P.k*st.radScale};
+  return st.segs;
+}
+
+// ---------- scene packing: player + boss + props share one capsule buffer ----------
+// material id rides in A.w as matId*2+radius (radius < 2 always) — keeps the
+// fragment-uniform footprint inside WebGL2's guaranteed 224-vector minimum
+const MAXN=96, NGRP=3;
+const segsA=new Float32Array(MAXN*4), segsB=new Float32Array(MAXN*4);
+const grpA=new Float32Array(NGRP*4), grpB=new Float32Array(NGRP*4);
+function packScene(groups){
+  let w=0;
+  for(let g=0;g<NGRP;g++){
+    const gr=groups[g];
+    if(!gr||(!gr.soft.length&&!gr.hard.length)){ // park empty groups far underground
+      grpA.set([0,-999,0,.001],g*4); grpB.set([0,0,0,.05],g*4); continue;
+    }
+    const start=w, center=gr.center;
+    let rad=.3, ns=0, nh=0;
+    const put=seg=>{
+      if(w>=MAXN)return false;
+      segsA[w*4]=seg[0][0];segsA[w*4+1]=seg[0][1];segsA[w*4+2]=seg[0][2];segsA[w*4+3]=seg[4]*2+seg[2];
+      segsB[w*4]=seg[1][0];segsB[w*4+1]=seg[1][1];segsB[w*4+2]=seg[1][2];segsB[w*4+3]=seg[3];
+      rad=Math.max(rad,len(sub(seg[0],center))+seg[2],len(sub(seg[1],center))+seg[3]);
+      w++; return true;
+    };
+    for(const s of gr.soft){if(put(s))ns++;}
+    for(const s of gr.hard){if(put(s))nh++;}
+    grpA.set([center[0],center[1],center[2],rad+.12],g*4);
+    grpB.set([start,ns,nh,gr.k||.05],g*4);
+  }
+  return w;
+}
+
+// ---------- renderer: raymarched SDF (WebGL2), three capsule groups + arena ----------
+const canvas=document.getElementById('gl');
+const gl=canvas.getContext('webgl2',{antialias:false,alpha:false});
+if(!gl){document.getElementById('fail').style.display='grid';throw new Error('no webgl2');}
+
+const VS=`#version 300 es
+void main(){vec2 v=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));
+gl_Position=vec4(v*2.-1.,0.,1.);}`;
+
+const ROCKS_GLSL=ROCKS.map(r=>
+  `d=min(d,length(p-vec3(${r[0].toFixed(2)},${(-r[2]*.35).toFixed(2)},${r[1].toFixed(2)}))-${r[2].toFixed(2)});`
+).join('\n  ');
+
+const FS=`#version 300 es
+precision highp float;
+out vec4 O;
+uniform vec2 uRes; uniform float uTime,uTanF,uMark,uRage;
+uniform vec3 uCamPos,uSun,uMarkPos;
+uniform vec4 uSlam;            // x,z impact · z: start time · w: live flag
+uniform mat3 uCamRot;
+const int MAXN=${MAXN};
+uniform vec4 uA[MAXN],uB[MAXN];   // A.w packs matId*2+r1
+uniform vec4 uGrpA[3];         // bounding center.xyz, radius
+uniform vec4 uGrpB[3];         // seg start, nSoft, nHard, smin k
+uniform vec3 uPal[12];         // 0-5 player pigment · 6-11 boss pigment
+
+float sdRC(vec3 p, vec4 A, vec4 B){
+  vec3 a=A.xyz,b=B.xyz; float r1=A.w,r2=B.w;
+  vec3 ba=b-a; float l2=dot(ba,ba); float rr=r1-r2;
+  float a2=l2-rr*rr; float il2=1.0/l2;
+  vec3 pa=p-a; float y=dot(pa,ba); float z=y-l2;
+  vec3 xp=pa*l2-ba*y; float x2=dot(xp,xp);
+  float y2=y*y*l2; float z2=z*z*l2;
+  float k=sign(rr)*rr*rr*x2;
+  if(sign(z)*a2*z2>k) return sqrt(x2+z2)*il2-r2;
+  if(sign(y)*a2*y2<k) return sqrt(x2+y2)*il2-r1;
+  return (sqrt(x2*a2*il2)+y*rr)*il2-r1;
+}
+float smin(float a,float b,float k){
+  float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+
+float rockSDF(vec3 p){
+  float d=1e9;
+  ${ROCKS_GLSL}
+  return d;
+}
+float mapM(vec3 p){
+  float d=1e9;
+  for(int g=0;g<3;g++){
+    float db=length(p-uGrpA[g].xyz)-uGrpA[g].w;
+    if(db>0.4){d=min(d,db);continue;}
+    int s0=int(uGrpB[g].x+.5), ns=int(uGrpB[g].y+.5);
+    int n=ns+int(uGrpB[g].z+.5);
+    float k=uGrpB[g].w, dg=1e9;
+    for(int i=0;i<MAXN;i++){
+      if(i>=n)break;
+      vec4 A=uA[s0+i]; A.w-=floor(A.w*.5)*2.;  // strip packed matId
+      float di=sdRC(p,A,uB[s0+i]);
+      dg=(i<ns)?smin(dg,di,k):min(dg,di);
+    }
+    d=min(d,dg);
+  }
+  return d;
+}
+float map(vec3 p){ return min(min(p.y,rockSDF(p)),mapM(p)); }
+
+vec3 calcN(vec3 p){
+  const vec2 e=vec2(1.,-1.)*.0012;
+  return normalize(e.xyy*map(p+e.xyy)+e.yyx*map(p+e.yyx)
+                  +e.yxy*map(p+e.yxy)+e.xxx*map(p+e.xxx));
+}
+float shadow(vec3 ro,vec3 rd){
+  float res=1.,t=.03;
+  for(int i=0;i<34;i++){
+    float h=min(mapM(ro+rd*t),rockSDF(ro+rd*t));
+    res=min(res,9.*h/t);
+    t+=clamp(h,.015,.25);
+    if(res<.01||t>9.)break;
+  }
+  return clamp(res,0.,1.);
+}
+float calcAO(vec3 p,vec3 n){
+  float occ=0.,sca=1.;
+  for(int i=0;i<5;i++){
+    float h=.012+.14*float(i)/4.;
+    occ+=(h-map(p+n*h))*sca; sca*=.8;
+  }
+  return clamp(1.-2.2*occ,0.,1.);
+}
+vec3 sky(vec3 rd){
+  float h=clamp(rd.y*.5+.5,0.,1.);
+  vec3 c=mix(vec3(.78,.60,.45),vec3(.16,.19,.27),pow(h,.75));
+  float s=clamp(dot(rd,uSun),0.,1.);
+  c+=vec3(1.,.85,.62)*(pow(s,500.)*2.2+pow(s,8.)*.16);
+  return c;
+}
+int matAt(vec3 p, out int grp){
+  float best=1e9; int mi=1; grp=0;
+  for(int g=0;g<3;g++){
+    if(length(p-uGrpA[g].xyz)-uGrpA[g].w>0.4)continue;
+    int s0=int(uGrpB[g].x+.5), n=int(uGrpB[g].y+.5)+int(uGrpB[g].z+.5);
+    for(int i=0;i<MAXN;i++){
+      if(i>=n)break;
+      vec4 A=uA[s0+i]; float m_=floor(A.w*.5); A.w-=m_*2.;
+      float di=sdRC(p,A,uB[s0+i]);
+      if(di<best){best=di;mi=int(m_+.5);grp=g;}
+    }
+  }
+  return mi;
+}
+
+void main(){
+  vec2 ndc=(2.*gl_FragCoord.xy-uRes)/uRes.y;
+  vec3 rd=normalize(uCamRot*vec3(ndc*uTanF,1.));
+  vec3 ro=uCamPos;
+
+  float t=0.,h;
+  for(int i=0;i<150;i++){
+    h=map(ro+rd*t);
+    if(h<.0009*t+.0004||t>42.)break;
+    t+=h*.85;
+  }
+
+  vec3 col;
+  if(t>42.) col=sky(rd);
+  else{
+    vec3 p=ro+rd*t;
+    vec3 n=calcN(p);
+    float dm=mapM(p), drk=rockSDF(p);
+    int grp=0, mi;
+    if(p.y<dm&&p.y<=drk) mi=0;
+    else if(drk<dm) mi=9;
+    else mi=matAt(p,grp);
+    int po=grp==0?0:6;                       // palette offset per creature
+    vec3 base; float shin=24.,spk=.25; vec3 emis=vec3(0.);
+    if(mi==0){
+      base=vec3(.44,.42,.345);
+      vec2 q=fract(p.xz*.85)-.5;                     // survey dots
+      base*=1.-smoothstep(.05,.02,length(q))*.35;
+      base*=.94+.06*sin(p.x*.7)*sin(p.z*.6);
+      float ar=abs(length(p.xz)-13.);                // arena boundary ring
+      base=mix(base,vec3(.91,.69,.31),smoothstep(.16,.03,ar)*.35);
+      float rr=length(p.xz-uMarkPos.xz);             // carve / call marker
+      float ring=smoothstep(.05,.0,abs(rr-(.30+.03*sin(uTime*6.)))-.012)*uMark;
+      base=mix(base,vec3(.91,.69,.31),ring);
+      if(uSlam.w>0.5){                               // slam shockwave ring
+        float st_=uTime-uSlam.z;
+        if(st_<0.9&&st_>0.){
+          float r2=length(p.xz-uSlam.xy);
+          base=mix(base,vec3(1.,.8,.5),smoothstep(.2,.0,abs(r2-st_*7.))*(1.-st_/.9)*.85);
+        }
+      }
+      spk=.02;
+    }
+    else if(mi==9){base=vec3(.36,.32,.28);base*=.88+.12*sin(p.x*2.7)*sin(p.y*4.1)*sin(p.z*3.3);spk=.05;}
+    else if(mi==1){float belly=smoothstep(.05,.9,-n.y);
+      base=mix(uPal[po],uPal[po+1],belly*.85);
+      base*=.85+.15*smoothstep(0.,.8,p.y);}
+    else if(mi==2)base=uPal[po+2];
+    else if(mi==3)base=uPal[po+3];
+    else if(mi==4){base=mix(vec3(.045,.04,.05),vec3(.4,.02,.02),grp>0?uRage:0.);shin=90.;spk=1.4;
+      emis=grp>0?vec3(1.,.12,.04)*uRage*.55:vec3(0.);}
+    else if(mi==5){base=uPal[po+4];shin=40.;spk=.5;}
+    else if(mi==7){base=uPal[po+1]*1.08;shin=60.;spk=.8;}
+    else {base=uPal[po+5];shin=40.;spk=.5;}
+
+    float sh=shadow(p+n*.012,uSun);
+    float dif=clamp(dot(n,uSun),0.,1.)*sh;
+    float ao=calcAO(p,n);
+    float skyA=.5+.5*n.y;
+    float bnc=clamp(-n.y,0.,1.);
+    float fre=pow(clamp(1.+dot(rd,n),0.,1.),3.);
+    vec3 lin=vec3(1.25,.98,.72)*1.18*dif
+            +vec3(.40,.48,.62)*.55*skyA*ao
+            +vec3(.45,.38,.28)*.35*bnc*ao;
+    col=base*lin;
+    vec3 hv=normalize(uSun-rd);
+    col+=vec3(1.,.9,.75)*pow(clamp(dot(n,hv),0.,1.),shin)*spk*dif;
+    col+=vec3(.55,.55,.6)*fre*.18*ao*(mi==0?0.:1.);
+    col+=emis;
+    col=mix(col,sky(rd),1.-exp(-.0022*t*t));
+  }
+  col=pow(col,vec3(.4545));
+  col*=1.-.22*pow(length(ndc*vec2(.62,.9)),3.);      // vignette
+  O=vec4(col,1.);
+}`;
+
+function makeProg(vs,fs){
+  const c=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;};
+  const p=gl.createProgram();
+  gl.attachShader(p,c(gl.VERTEX_SHADER,vs));gl.attachShader(p,c(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+let prog;
+try{prog=makeProg(VS,FS);}catch(e){
+  document.getElementById('fail').style.display='grid';
+  document.getElementById('fail').firstElementChild.textContent='Shader failed: '+e.message;
+  throw e;
+}
+gl.useProgram(prog);
+const U={};
+for(const n of['uRes','uTime','uTanF','uMark','uRage','uCamPos','uSun','uMarkPos','uSlam',
+  'uCamRot','uA','uB','uGrpA','uGrpB','uPal'])
+  U[n]=gl.getUniformLocation(prog,n);
+const SUN=nrm(V(-.45,.62,-.38));
+
+// ---------- camera: follows the hunter, Tab locks to the monster ----------
+const cam={az:.7,el:.40,dist:7.4,pos:V(0,3,12),
+  follow:new SOD3(1.4,1,0,V(0,0,8)),tanF:Math.tan(21*Math.PI/180),
+  lock:false,shake:0};
+function camBasis(){
+  const j=cam.shake;
+  const tgt=add(cam.follow.y,V((Math.random()-.5)*j,.55+(Math.random()-.5)*j,(Math.random()-.5)*j));
+  cam.pos=add(tgt,scl(V(Math.cos(cam.el)*Math.sin(cam.az),Math.sin(cam.el),
+                        Math.cos(cam.el)*Math.cos(cam.az)),cam.dist));
+  const fw=nrm(sub(tgt,cam.pos));
+  const right=nrm(cross(fw,V(0,1,0)));
+  const up=cross(right,fw);
+  return {right,up,fw};
+}
+function lockCam(dt){
+  cam.shake*=Math.exp(-6*dt);
+  if(!cam.lock||boss.dead)return;
+  const v=sub(player.chest,boss.chest);
+  const des=Math.atan2(v[0],v[2]);          // camera sits behind the player, monster ahead
+  const d=Math.atan2(Math.sin(des-cam.az),Math.cos(des-cam.az));
+  cam.az+=d*Math.min(1,dt*3.5);
+}
+
+// ---------- input: WASD + orbit drag ----------
+const keys=new Set();
+let dashCool=0, muted=false;
+function playerAttack(){
+  if(player.dead||game.carving||player.act)return;
+  player._hitDone=false;
+  startAction(player,'attack');
+}
+function playerDash(){
+  if(player.dead||game.carving||dashCool>0)return;
+  dashCool=.9; player.iFrames=.38;
+  const dir=len(player.moveDir)>.1?player.moveDir:player.fw;
+  player.imp=add(player.imp,scl(dir,6.5));
+  player.act='dash';player.actT=0;
+}
+function startAction(cr,n){
+  if(cr.dead)return;
+  if(n==='rest'){cr.restOn=!cr.restOn;if(cr.restOn)cr.target=[cr.leader[0],0,cr.leader[2]];return;}
+  if(cr.restOn)cr.restOn=false;
+  if(n==='jump'&&(cr.jumpY>0||cr.air>.5))return;
+  if(n==='dash')cr.imp=add(cr.imp,scl(cr.fw,6.5));
+  cr.act=n;cr.actT=0;cr._struck=false;
+}
+addEventListener('keydown',e=>{
+  audioUnlock();
+  const k=e.key===' '?'space':e.key.toLowerCase();
+  if(k==='tab'){e.preventDefault();cam.lock=!cam.lock;log(cam.lock?'LOCK-ON':'LOCK OFF',true);return;}
+  keys.add(k);
+  if(k==='space'){e.preventDefault();if(!game.carving)startAction(player,'jump');}
+  else if(k==='j')playerAttack();
+  else if(k==='shift')playerDash();
+  else if(k==='e')tryCarve();
+  else if(k==='m'){muted=!muted;log(muted?'MUTED':'SOUND ON');}
+  else if(k==='r'&&(game.failed||game.over)){if(typeof location!=='undefined')location.reload();}
+});
+addEventListener('keyup',e=>keys.delete(e.key===' '?'space':e.key.toLowerCase()));
+function updInput(dt){
+  dashCool=Math.max(0,dashCool-dt);
+  const {right,fw}=cam._b||camBasis();
+  const f2=nrm([fw[0],0,fw[2]]), r2=nrm([right[0],0,right[2]]);
+  let d=V();
+  if(keys.has('w'))d=add(d,f2); if(keys.has('s'))d=sub(d,f2);
+  if(keys.has('d'))d=add(d,r2); if(keys.has('a'))d=sub(d,r2);
+  player.moveDir=game.carving?V():(len(d)>.1?nrm(d):V());
+}
+
+// orbit drag / pinch zoom / click = attack
+const pointers=new Map();
+let dragDist=0,pinch0=0,wasPinch=false;
+canvas.addEventListener('pointerdown',e=>{
+  audioUnlock();
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  dragDist=0;
+  if(pointers.size===2){wasPinch=true;const a=[...pointers.values()];pinch0=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)*cam.dist;}
+});
+canvas.addEventListener('pointermove',e=>{
+  const p=pointers.get(e.pointerId); if(!p)return;
+  const dx=e.clientX-p.x,dy=e.clientY-p.y;
+  p.x=e.clientX;p.y=e.clientY;
+  if(pointers.size===2){
+    const a=[...pointers.values()];
+    const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    if(d>0)cam.dist=clamp(pinch0/d,3.2,15);
+    return;
+  }
+  dragDist+=Math.abs(dx)+Math.abs(dy);
+  if(dragDist>6){cam.az-=dx*.0055;cam.el=clamp(cam.el+dy*.004,.10,1.25);}
+});
+canvas.addEventListener('pointerup',e=>{
+  pointers.delete(e.pointerId);
+  if(pointers.size===0){const wp=wasPinch;wasPinch=false;if(wp)return;}
+  else return;
+  if(dragDist<=6)playerAttack();
+});
+canvas.addEventListener('pointercancel',e=>pointers.delete(e.pointerId));
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  cam.dist=clamp(cam.dist*Math.exp(e.deltaY*.0011),3.2,15);
+},{passive:false});
+
+// ---------- HUD ----------
+const $=id=>document.getElementById(id);
+function log(msg,amber){
+  const box=$('huntlog'); if(!box||!box.insertBefore)return;
+  const d=document.createElement('div');
+  d.textContent=msg; if(amber)d.className='amber';
+  box.insertBefore(d,box.firstChild||null);
+  while(box.children.length>4)box.removeChild(box.lastChild);
+  setTimeout(()=>{d.classList.add('fade');},4200);
+  setTimeout(()=>{if(d.parentNode)d.parentNode.removeChild(d);},5400);
+}
+function worldToScreen(p){
+  const b=cam._b; if(!b)return null;
+  const v=sub(p,cam.pos);
+  const z=dot(v,b.fw); if(z<.15)return null;
+  const s=(innerHeight/2)/(z*cam.tanF);
+  return [innerWidth/2+dot(v,b.right)*s, innerHeight/2-dot(v,b.up)*s];
+}
+function dmgNum(pos,txt,cls){
+  const sc=worldToScreen(pos); if(!sc)return;
+  const hud=$('hud'); if(!hud||!hud.appendChild)return;
+  const d=document.createElement('div');
+  d.className='dmg'+(cls?' '+cls:'');
+  d.textContent=txt;
+  d.style.left=(sc[0]+(Math.random()-.5)*26)+'px';
+  d.style.top =(sc[1]-14+(Math.random()-.5)*10)+'px';
+  hud.appendChild(d);
+  setTimeout(()=>{if(d.parentNode)d.parentNode.removeChild(d);},850);
+}
+function banner(big,sub,holdMs){
+  const b=$('banner'); if(!b||!b.querySelector)return;
+  b.querySelector('.big').textContent=big;
+  b.querySelector('.sub').innerHTML=sub||'';
+  b.style.display='block';
+  if(holdMs)setTimeout(()=>{b.style.display='none';},holdMs);
+}
+function flash(){
+  const f=$('flash'); if(!f)return;
+  f.style.opacity=1; setTimeout(()=>{f.style.opacity=0;},110);
+}
+
+// ---------- tiny synth (no assets) ----------
+let AC=null;
+function audioUnlock(){
+  if(AC||typeof AudioContext==='undefined')return;
+  try{AC=new AudioContext();}catch(e){}
+}
+function tone(f0,f1,dur,type,vol){
+  if(!AC||muted)return;
+  const o=AC.createOscillator(),g=AC.createGain(),t0=AC.currentTime;
+  o.type=type;o.frequency.setValueAtTime(f0,t0);
+  o.frequency.exponentialRampToValueAtTime(Math.max(f1,1),t0+dur);
+  g.gain.setValueAtTime(vol,t0);g.gain.exponentialRampToValueAtTime(.001,t0+dur);
+  o.connect(g).connect(AC.destination);o.start(t0);o.stop(t0+dur+.02);
+}
+function noiseHit(dur,vol,fc){
+  if(!AC||muted)return;
+  const n=Math.floor(AC.sampleRate*dur),buf=AC.createBuffer(1,n,AC.sampleRate);
+  const ch=buf.getChannelData(0);
+  for(let i=0;i<n;i++)ch[i]=(Math.random()*2-1)*(1-i/n);
+  const src=AC.createBufferSource(),g=AC.createGain(),f=AC.createBiquadFilter();
+  src.buffer=buf;f.type='lowpass';f.frequency.value=fc;g.gain.value=vol;
+  src.connect(f).connect(g).connect(AC.destination);src.start();
+}
+const sfx={
+  hit:()=>noiseHit(.08,.5,900),
+  bite:()=>{tone(220,60,.12,'square',.3);noiseHit(.06,.4,1200);},
+  roar:()=>{tone(95,36,.85,'sawtooth',.5);noiseHit(.8,.4,420);},
+  hurt:()=>tone(300,110,.2,'square',.35),
+  slam:()=>{tone(70,28,.32,'sine',.8);noiseHit(.26,.6,260);},
+  sever:()=>{noiseHit(.3,.7,1500);tone(500,80,.25,'sawtooth',.28);},
+  carve:()=>{tone(660,660,.09,'sine',.28);setTimeout(()=>tone(880,880,.12,'sine',.28),90);},
+  win:()=>{tone(440,440,.14,'sine',.32);setTimeout(()=>tone(554,554,.14,'sine',.32),150);
+    setTimeout(()=>tone(659,659,.3,'sine',.34),300);},
+  faint:()=>tone(220,55,.7,'sine',.4),
+};
+
+// ---------- the hunt: creatures, quest state ----------
+const player=makeCreature('beast',{isPlayer:true,pos:V(0,0,9),hp:100,pal:'ember',scale:.9,speed:1.25});
+const boss=makeCreature('rex',{pos:V(0,0,-3),hp:1000,pal:'fossil',scale:1.55,speed:.85});
+boss.roam=true;
+let bossBaseSpeed=boss.P.speed;
+const game={
+  over:false,failed:false,faints:0,loot:[],carveNodes:[],props:null,
+  severed:false,parts:{tail:130,legs:150},tiredHurt:0,rage:0,time:0,
+  ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,stam:100,enraged:false,fled:false,tiredT:0},
+  slam:[0,0,-99,0],mark:{pos:V(0,0,0),amp:0},carving:null,
+};
+
+// ---------- combat: the SDF IS the hitbox ----------
+// JS port of the shader's round-cone distance — evaluate the enemy's
+// capsule list at a probe point; the nearest capsule names the part.
+function sdRCjs(p,a,b,r1,r2){
+  const ba=sub(b,a), l2=dot(ba,ba)||1e-9, rr=r1-r2;
+  const a2=l2-rr*rr, il2=1/l2;
+  const pa=sub(p,a), y=dot(pa,ba), z=y-l2;
+  const xp=sub(scl(pa,l2),scl(ba,y)), x2=dot(xp,xp);
+  const y2=y*y*l2, z2=z*z*l2;
+  const k=Math.sign(rr)*rr*rr*x2;
+  if(Math.sign(z)*a2*z2>k) return Math.sqrt(x2+z2)*il2-r2;
+  if(Math.sign(y)*a2*y2<k) return Math.sqrt(x2+y2)*il2-r1;
+  return (Math.sqrt(x2*a2*il2)+y*rr)*il2-r1;
+}
+function nearestPart(point,segs){
+  let d=1e9,tag=null;
+  if(!segs)return {d,tag};
+  for(const list of[segs.soft,segs.hard])for(const s of list){
+    const di=sdRCjs(point,s[0],s[1],s[2],s[3]);
+    if(di<d){d=di;tag=s[5];}
+  }
+  return {d,tag};
+}
+
+function hitBoss(amt,tag,pos){
+  let mult=1, cls='';
+  if(tag==='head'){mult=1.6;cls='big';}
+  if(game.ai.state==='tired'){mult*=1.4;game.tiredHurt+=amt*mult;}
+  const dmg=Math.round(amt*mult);
+  boss.hp-=dmg; game.ai.stam-=3;
+  if(tag==='tail'&&!game.severed){game.parts.tail-=dmg;if(game.parts.tail<=0)severTail();}
+  if(tag&&tag.indexOf('leg')===0&&game.parts.legs>0){
+    game.parts.legs-=dmg;
+    if(game.parts.legs<=0){
+      boss.limpLeg=+tag.slice(3);
+      bossBaseSpeed*=.72; boss.P.speed*=.72;
+      log('Its leg buckles — the monster staggers!',true);
+    }
+  }
+  dmgNum(pos,dmg,cls); sfx.hit(); cam.shake=Math.max(cam.shake,.12);
+  boss.imp=add(boss.imp,scl(nrm(sub(boss.leader,player.leader)),.5));
+  aggro();
+  if(boss.hp<=0&&!boss.dead)killBoss();
+  else if(!game.ai.enraged&&!game.ai.fled&&boss.hp<=boss.maxHp*.5)enrage();
+  else if(!game.ai.fled&&boss.hp<=boss.maxHp*.22)flee();
+}
+function hurtPlayer(amt,from){
+  if(player.iFrames>0||player.dead||game.over||game.failed)return;
+  amt=Math.round(amt);
+  player.hp-=amt; flash(); sfx.hurt(); cam.shake=Math.max(cam.shake,.35);
+  dmgNum(add(player.chest,V(0,.3,0)),amt,'hurt');
+  if(from){const kb=nrm(sub(player.leader,from));kb[1]=0;player.imp=add(player.imp,scl(kb,4.5));}
+  player.iFrames=.5;
+  if(player.hp<=0)faint();
+}
+function onSlam(cr){
+  if(cr!==boss)return;
+  game.slam=[cr.leader[0],cr.leader[2],game.time,1];
+  sfx.slam(); cam.shake=Math.max(cam.shake,.6);
+  const dd=Math.hypot(player.leader[0]-cr.leader[0],player.leader[2]-cr.leader[2]);
+  if(dd<3.4&&player.jumpY<.25)hurtPlayer(10+20*(1-dd/3.4),cr.leader);
+}
+function combat(dt){
+  // player's lunge connects?
+  if(player.act==='attack'&&player._struck&&!player._hitDone){
+    let best={d:9,tag:null,at:player.jawTip};
+    for(const pt of[player.jawTip,player.headPos]){
+      const r=nearestPart(pt,boss.segs);
+      if(r.d<best.d)best={d:r.d,tag:r.tag,at:pt};
+    }
+    if(best.d<.3){player._hitDone=true;hitBoss(26+Math.random()*10,best.tag,best.at);}
+  }
+  // boss bite connects?
+  if(boss.act==='attack'&&boss._struck&&!boss._bit){
+    const r=nearestPart(boss.jawTip,player.segs);
+    if(r.d<.45){boss._bit=true;sfx.bite();hurtPlayer(game.ai.enraged?30:20,boss.leader);}
+  }
+  // charge trample window
+  if(boss._chargeT!==undefined&&boss._chargeT<.8){
+    boss._chargeT+=dt;
+    const dd=Math.hypot(player.leader[0]-boss.leader[0],player.leader[2]-boss.leader[2]);
+    if(!boss._chargeHit&&dd<boss.P.chestR+player.P.chestR+.5){
+      boss._chargeHit=true;hurtPlayer(16,boss.leader);
+    }
+  }
+}
+
+// ---------- part break: sever the tail, leave it in the world ----------
+function severTail(){
+  game.severed=true; game.parts.tail=0;
+  const N0=boss.tail.length;
+  const chain=boss.tail.slice(2).map(p=>[...p]);
+  const drop=p=>[p[0],Math.max(.06,p[1]*.25),p[2]];
+  const soft=[];
+  let prev=drop(chain[0]);
+  for(let i=1;i<chain.length;i++){
+    const cur=drop(chain[i]);
+    const r1=(boss.P.hipR*.7)*(1-(i+1)/N0)+.02, r2=(boss.P.hipR*.7)*(1-(i+2)/N0)+.015;
+    soft.push([prev,cur,r1,r2,1,'prop']);
+    prev=cur;
+  }
+  const mid=drop(chain[Math.floor(chain.length/2)]);
+  game.props={soft,
+    hard:[[add(mid,V(0,.18,0)),add(mid,V(0,.181,0)),.07,.07,5,'prop']], // carve beacon
+    center:mid,k:.06};
+  game.carveNodes.push({pos:mid,uses:1,loot:['ALPHA REX TAIL']});
+  boss.P.tailLen*=3/boss.P.tailN; boss.P.tailN=3; boss.tail.length=3;
+  dmgNum(mid,'SEVERED!','big'); sfx.sever(); cam.shake=Math.max(cam.shake,.5);
+  log('Tail severed! Carve it for materials.',true);
+}
+
+// ---------- boss AI: patrol → hunt → enrage → tired → flee → dead ----------
+function aggro(){
+  const ai=game.ai;
+  if(ai.state!=='patrol'||boss.dead)return;
+  ai.state='hunt'; boss.roam=false;
+  startAction(boss,'roar'); sfx.roar(); cam.shake=Math.max(cam.shake,.5);
+  log('The Alpha Rex has noticed you!',true);
+}
+function enrage(){
+  const ai=game.ai;
+  ai.enraged=true;
+  if(ai.state==='tired')ai.tiredT=Math.min(ai.tiredT,1); // rage cuts the nap short
+  setDyn(boss,boss.P.dyn[0]*1.55,boss.P.dyn[1]*.65,boss.P.dyn[2]);
+  boss.P.speed=bossBaseSpeed*1.28;
+  boss.restOn=false;
+  startAction(boss,'roar'); sfx.roar(); cam.shake=Math.max(cam.shake,.7);
+  log('The Alpha Rex is ENRAGED!',true);
+}
+function deEnrage(){
+  game.ai.enraged=false;
+  setDyn(boss,boss.P.dyn[0],boss.P.dyn[1],boss.P.dyn[2]);
+  boss.P.speed=bossBaseSpeed;
+}
+function tired(){
+  const ai=game.ai;
+  ai.state='tired'; ai.tiredT=8; game.tiredHurt=0;
+  boss.restOn=true;
+  if(ai.enraged)deEnrage();
+  log('The monster is exhausted — an opening!',true);
+}
+function flee(){
+  const ai=game.ai;
+  if(ai.fled||boss.dead)return;
+  ai.fled=true; ai.state='flee'; boss.restOn=false;
+  if(ai.enraged)deEnrage();
+  // retreat to the arena-edge point farthest from the hunter
+  let bestT=V(9.5,0,0), bestD=-1;
+  for(let i=0;i<8;i++){
+    const a=i/8*Math.PI*2, c=[Math.sin(a)*9.5,0,Math.cos(a)*9.5];
+    const d=Math.hypot(c[0]-player.leader[0],c[2]-player.leader[2]);
+    if(d>bestD){bestD=d;bestT=c;}
+  }
+  boss.target=bestT;
+  log('The Alpha Rex limps away…',true);
+}
+function killBoss(){
+  boss.hp=0; boss.dead=true; game.over=true; game.ai.state='dead';
+  if(game.ai.enraged)deEnrage();
+  boss.restOn=true;
+  game.carveNodes.push({at:'boss',uses:3,loot:['REX SCALE ×2','REX FANG','ALPHA PLATE — RARE!']});
+  sfx.win(); cam.shake=Math.max(cam.shake,.4);
+  log('The Alpha Rex is slain!',true);
+  const mm=Math.floor(game.time/60),ss=Math.floor(game.time%60);
+  setTimeout(()=>banner('QUEST COMPLETE',
+    "HUNT TIME "+mm+"'"+String(ss).padStart(2,'0')+'" · CARVE THE CORPSE — E · R TO RESET'),1400);
+}
+function faint(){
+  game.faints++; player.hp=0; player.dead=true; game.carving=null; sfx.faint();
+  if(game.faints>=3){
+    game.failed=true;
+    banner('QUEST FAILED','THE HUNTER WAS DEFEATED · PRESS R TO RETRY');
+    return;
+  }
+  banner('YOU FAINTED','RETURNING TO CAMP… ('+game.faints+'/3)',2200);
+  setTimeout(()=>{
+    if(game.failed)return;
+    player.dead=false; player.restOn=false; player.hp=player.maxHp;
+    player.leader=[0,player.P.chestH,ARENA_R-2.5];
+    player.vel=V(); player.imp=V();
+    player.sodChest.reset(player.leader);
+    player.sodLook.reset(add(player.leader,V(1,0,0)));
+    player.target=[0,0,ARENA_R-2.5];
+    buildLegs(player,player.P.pairs);
+    player.iFrames=2.5;
+  },2000);
+}
+function bossAI(dt){
+  const ai=game.ai;
+  if(boss.dead)return;
+  const dvec=sub(player.leader,boss.leader); dvec[1]=0;
+  const dist=len(dvec);
+  ai.atkCool-=dt; ai.chargeCool-=dt; ai.slamCool-=dt;
+  if(ai.state==='patrol'){ if(dist<7.5)aggro(); return; }
+  if(ai.state==='tired'){
+    ai.tiredT-=dt;
+    if(ai.tiredT<=0||game.tiredHurt>70){
+      boss.restOn=false; ai.stam=70; game.tiredHurt=0; ai.state='hunt';
+      log('The Alpha Rex rises again…');
+    }
+    return;
+  }
+  if(ai.state==='flee'){
+    const dd=sub(boss.target,boss.leader); dd[1]=0;
+    if(len(dd)<1.4){
+      ai.state='tired'; ai.tiredT=9; game.tiredHurt=0; boss.restOn=true;
+      log('It settles down, breathing heavily — now!',true);
+    }
+    return;
+  }
+  // hunt
+  if(ai.enraged)ai.stam-=4*dt;
+  if(ai.stam<=0){tired();return;}
+  if(!boss.act&&!boss.restOn){
+    boss.target=[player.leader[0]+player.vel[0]*.25,0,player.leader[2]+player.vel[2]*.25];
+    const biteR=2.4*boss.scale;
+    if(dist<biteR&&ai.atkCool<=0){
+      ai.atkCool=(ai.enraged?1.4:2.4)+Math.random()*.6; ai.stam-=10;
+      boss._bit=false; startAction(boss,'attack');
+    }else if(ai.enraged&&dist<5.5&&ai.slamCool<=0){
+      ai.slamCool=12; ai.stam-=18;
+      boss._slam=true; startAction(boss,'jump');
+    }else if(dist>4&&dist<11&&ai.chargeCool<=0){
+      ai.chargeCool=ai.enraged?5:8; ai.stam-=15;
+      boss._chargeT=0; boss._chargeHit=false;
+      boss.imp=add(boss.imp,scl(nrm(dvec),9.5));
+      boss.act='dash'; boss.actT=0;
+      log('It charges!');
+    }
+  }
+}
+
+// ---------- carving ----------
+function nodePos(n){return n.at==='boss'?boss.chest:n.pos;}
+function nearNode(){
+  let bestN=null,bd=1e9;
+  for(const n of game.carveNodes){
+    if(n.uses<=0)continue;
+    const p=nodePos(n);
+    const d=Math.hypot(player.leader[0]-p[0],player.leader[2]-p[2]);
+    if(d<bd){bd=d;bestN=n;}
+  }
+  return bd<(bestN&&bestN.at==='boss'?2.6:1.7)?bestN:null;
+}
+function tryCarve(){
+  if(game.carving||player.dead||player.jumpY>0||game.failed)return;
+  const n=nearNode(); if(!n)return;
+  game.carving={node:n,t:0};
+}
+function carveUpdate(dt){
+  game.mark.amp=0;
+  const pr=$('prompt'); if(!pr||!pr.style)return;
+  if(player.dead||game.failed){game.carving=null;pr.style.display='none';return;}
+  if(game.carving){
+    const c=game.carving; c.t+=dt;
+    const k=Math.min(1,c.t/1.25);
+    pr.style.display='block';
+    pr.textContent='CARVING '+'▓'.repeat(Math.round(k*8))+'░'.repeat(8-Math.round(k*8));
+    if(c.t>=1.25){
+      const item=c.node.loot.shift()||'MONSTER HIDE';
+      c.node.uses--; game.loot.push(item);
+      log('+ '+item,true); sfx.carve();
+      game.carving=null;
+    }
+    return;
+  }
+  const n=nearNode();
+  if(n){
+    const p=nodePos(n);
+    game.mark.pos=[p[0],0,p[2]]; game.mark.amp=1;
+    pr.style.display='block'; pr.textContent='E — CARVE';
+  }else pr.style.display='none';
+}
+
+// ---------- HUD tick ----------
+function hudTick(){
+  const hf=$('hpfill');
+  if(hf&&hf.style){
+    hf.style.width=Math.max(0,player.hp/player.maxHp*100)+'%';
+    if(hf.classList)hf.classList.toggle('low',player.hp<player.maxHp*.35);
+  }
+  const sf=$('stamfill'); if(sf&&sf.style)sf.style.width=((1-dashCool/.9)*100)+'%';
+  const ft=$('faints'); if(ft)ft.textContent='●'.repeat(Math.max(0,3-game.faints))+'○'.repeat(Math.min(3,game.faints));
+}
+
+// ---------- resize + adaptive quality ----------
+let quality=Math.min(devicePixelRatio||1,1.5),emaMs=14;
+function resize(){
+  const w=Math.round(innerWidth*quality),hh=Math.round(innerHeight*quality);
+  if(canvas.width!==w||canvas.height!==hh){canvas.width=w;canvas.height=hh;
+    gl.viewport(0,0,w,hh);}
+}
+addEventListener('resize',resize);
+
+// ---------- main loop ----------
+const palBuf=new Float32Array(36);
+banner('QUEST 01 — SLAY THE ALPHA REX','WASD MOVE · CLICK ATTACK · SHIFT DODGE · IT GUARDS THE FAR SIDE',3800);
+let last=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=Math.max(Math.min((now-last)/1000,1/20),1e-4); last=now;
+  emaMs=emaMs*.95+(now-(frame._p||now))*.05; frame._p=now;
+  if(emaMs>22&&quality>.5){quality=Math.max(.5,quality*.92);resize();}
+  else if(emaMs<11&&quality<Math.min(devicePixelRatio||1,1.5)){quality=Math.min(quality*1.03,Math.min(devicePixelRatio||1,1.5));resize();}
+  resize();
+  game.time+=dt;
+
+  updInput(dt);
+  if(!game.failed&&!game.over)bossAI(dt);
+  const steps=dt>1/45?2:1;
+  for(let i=0;i<steps;i++){
+    buildSkeleton(player,dt/steps);
+    buildSkeleton(boss,dt/steps);
+  }
+  combat(dt);
+  carveUpdate(dt);
+  game.rage+=(((game.ai.enraged&&!boss.dead)?1:0)-game.rage)*Math.min(1,dt*2);
+  packScene([player.segs,boss.segs,game.props]);
+
+  cam.follow.update(dt,player.chest);
+  lockCam(dt);
+  const b=camBasis(); cam._b=b;
+  const palP=PALETTES[player.pal],palB=PALETTES[boss.pal];
+  for(let i=0;i<6;i++){
+    let c=hex(palP[i]);palBuf[i*3]=c[0];palBuf[i*3+1]=c[1];palBuf[i*3+2]=c[2];
+    c=hex(palB[i]);palBuf[18+i*3]=c[0];palBuf[18+i*3+1]=c[1];palBuf[18+i*3+2]=c[2];
+  }
+
+  gl.uniform2f(U.uRes,canvas.width,canvas.height);
+  gl.uniform1f(U.uTime,game.time);
+  gl.uniform1f(U.uTanF,cam.tanF);
+  gl.uniform1f(U.uMark,game.mark.amp*(.75+.25*Math.sin(game.time*5)));
+  gl.uniform1f(U.uRage,game.rage);
+  gl.uniform3f(U.uCamPos,...cam.pos);
+  gl.uniform3f(U.uSun,...SUN);
+  gl.uniform3f(U.uMarkPos,...game.mark.pos);
+  gl.uniform4f(U.uSlam,...game.slam);
+  gl.uniformMatrix3fv(U.uCamRot,false,[...b.right,...b.up,...b.fw]);
+  gl.uniform4fv(U.uA,segsA);gl.uniform4fv(U.uB,segsB);
+  gl.uniform4fv(U.uGrpA,grpA);gl.uniform4fv(U.uGrpB,grpB);
+  gl.uniform3fv(U.uPal,palBuf);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  hudTick();
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
