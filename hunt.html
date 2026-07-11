@@ -387,8 +387,13 @@ function simulate(cr,dt){
     const a=st._spin*dt, c=Math.cos(a), s=Math.sin(a);
     hv=[hv[0]*c-hv[2]*s,0,hv[0]*s+hv[2]*c];
   }
-  const hipXZ=add([st.chest[0],0,st.chest[2]],scl(nrm(hv),P.bodyLen));
-  st.hip=[hipXZ[0],st.chest[1]+(P.hipH-P.chestH)*st.hMul*(1-st.air)+st.air*.16,hipXZ[2]];
+  // volume conservation: chest→hip is a rigid bone in 3D, not just in plan view —
+  // when the hip rides higher/lower, the horizontal span shortens to compensate
+  const hipY=st.chest[1]+(P.hipH-P.chestH)*st.hMul*(1-st.air)+st.air*.16;
+  const dy=hipY-st.chest[1];
+  const span=Math.sqrt(Math.max(P.bodyLen*P.bodyLen-dy*dy,P.bodyLen*P.bodyLen*.16));
+  const hipXZ=add([st.chest[0],0,st.chest[2]],scl(nrm(hv),span));
+  st.hip=[hipXZ[0],hipY,hipXZ[2]];
   let fw=sub(st.chest,st.hip); fw[1]=0; fw=nrm(fw);
   const side=nrm(cross(V(0,1,0),fw));
 
@@ -482,8 +487,13 @@ function buildSkeleton(cr,dt){
   const lat=Math.sin(st.phase*Math.PI*2)*P.undulate*st.speedN;
   const midPt=add(mix(st.chest,st.hip,.5),scl(side,lat));
   const breathe=1+Math.sin(t*1.7)*.02;
-  S(st.chest,midPt,P.chestR*rs*breathe,P.midR*rs,1,soft);
-  S(midPt,st.hip,P.midR*rs,P.hipR*rs,1,soft);
+  // volume conservation: squashing (crouch/rest) widens the barrel, and a bent
+  // spine slims the middle so the arc doesn't read as a swelling body
+  const vc=1+.13*st.crouch+.16*st.rest;
+  const bend=1-Math.abs(dot(nrm(sub(midPt,st.chest)),nrm(sub(st.hip,midPt))));
+  const midRv=P.midR*rs*vc*(1-.4*Math.min(bend*2,.5));
+  S(st.chest,midPt,P.chestR*rs*breathe*vc,midRv,1,soft);
+  S(midPt,st.hip,midRv,P.hipR*rs*vc,1,soft);
   if(P.abdomen){ // bug: thorax → fat abdomen
     const tip=add(add(st.hip,scl(fw,-.55)),V(0,.07+Math.sin(t*3)*.015,0));
     S(st.hip,tip,P.hipR*rs*1.5,P.hipR*rs*.55,1,soft);
@@ -591,8 +601,14 @@ function buildSkeleton(cr,dt){
       const rest=nrm(add(scl(fw,-1),add(V(0,-.06+i*.03,0),scl(side,sw))));
       let dir=nrm(sub(st.tail[i],prev));
       dir=nrm(mix(dir,rest,clamp(dt*4,0,1)));
+      // steer above ground BEFORE placing, so every segment keeps its exact
+      // length — clamping y after placement was stretching the tail
+      const minY=(0.03-prev[1])/segL;
+      if(dir[1]<minY&&minY<.99){
+        const h=Math.hypot(dir[0],dir[2])||1e-6, hs2=Math.sqrt(1-minY*minY)/h;
+        dir=[dir[0]*hs2,minY,dir[2]*hs2];
+      }
       st.tail[i]=add(prev,scl(dir,segL));
-      st.tail[i][1]=Math.max(st.tail[i][1],.03);
       const r1=(P.hipR*.7)*(1-i/P.tailN)*rs+.015;
       const r2=(P.hipR*.7)*(1-(i+1)/P.tailN)*rs+.012;
       S(prev,st.tail[i],r1,r2,1,soft,'tail');
