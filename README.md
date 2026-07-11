@@ -15,8 +15,11 @@ smoothly-blended capsules.
 
 ## Hunt mode (vertical slice)
 
-Open `hunt.html` — a Monster Hunter-style quest built on the same engine:
-you are a beast hunting a scaled-up **Alpha Rex** in a bounded arena.
+Open `hunt.html` — a Monster Hunter-style quest built on the same engine.
+Every hunt generates a **new species** (`?seed=N` to pin one): archetype ×
+scale, bulk, legs, wings, tail, tempo, palette, and a name — and the body
+plan is the moveset (wings dive-bomb, long tails sweep, tailless bruisers
+slam, twitchy species telegraph less). The quest banner briefs the tells.
 
 - **WASD** move · **click / J** attack · **shift** dash (i-frames) · **space** jump ·
   **Tab** lock-on · **E** carve · **M** mute · 3 faints = quest failed
