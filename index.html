@@ -41,7 +41,8 @@
   .sect{font-family:var(--mono);font-size:9.5px;letter-spacing:.26em;color:var(--amber);
     margin:16px 0 8px;}
   .sect:first-child{margin-top:2px;}
-  .prow{display:flex;gap:6px;}
+  .prow{display:flex;gap:6px;flex-wrap:wrap;}
+  #presets button{flex:1 1 30%;}
   .prow button{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
     padding:7px 0;background:transparent;border:1px solid var(--glass-line);border-radius:6px;
     color:var(--ink-dim);cursor:pointer;}
@@ -79,7 +80,7 @@
   <div class="t1">PROCEDURAL <b>MONSTER</b> LAB</div>
   <div class="t2">SDF TUBE METHOD · IK GAIT · SECOND-ORDER DYNAMICS</div>
 </div>
-<div class="hints"><span>CLICK</span> GROUND TO CALL IT · <span>DRAG</span> ORBIT · <span>SCROLL</span> ZOOM</div>
+<div class="hints"><span>CLICK</span> GROUND TO CALL IT · <span>DRAG</span> ORBIT · <span>SCROLL</span> ZOOM · <span>A</span> ATTACK · <span>␣</span> JUMP · <span>D</span> DASH · <span>R</span> REST</div>
 
 <button class="ptoggle" id="ptoggle" aria-label="Toggle controls">◧</button>
 <div class="panel" id="panel">
@@ -88,6 +89,16 @@
     <button data-p="skink">SKINK</button>
     <button data-p="beast">BEAST</button>
     <button data-p="bug">BUG</button>
+    <button data-p="rex">REX</button>
+    <button data-p="wyvern">WYVERN</button>
+  </div>
+
+  <div class="sect">ACTIONS · A ␣ D R</div>
+  <div class="prow" id="actions">
+    <button data-a="attack">ATTACK</button>
+    <button data-a="jump">JUMP</button>
+    <button data-a="dash">DASH</button>
+    <button data-a="rest" id="btnRest">REST</button>
   </div>
 
   <div class="sect">DYNAMICS ·  f ζ r</div>
@@ -106,11 +117,17 @@
     <input type="range" id="sp" min="0.7" max="1.4" step="0.01" value="1"></div>
   <div class="ctl"><label>jelly wobble <output id="ow"></output></label>
     <input type="range" id="sw" min="0" max="1" step="0.01" value="0"></div>
+  <div class="ctl"><label>leg pairs <output id="opairs"></output></label>
+    <input type="range" id="spairs" min="1" max="4" step="1" value="2"></div>
+  <div class="ctl"><label>posture <output id="opost"></output></label>
+    <input type="range" id="spost" min="0" max="1" step="0.01" value="0.5"></div>
+  <div class="note">posture 0 = sprawled reptile · 1 = upright — joints, stance and pole vectors morph between them</div>
 
   <div class="sect">DRESS-UP</div>
   <div class="checks">
     <label><input type="checkbox" id="ckSpikes"> dorsal spikes</label>
     <label><input type="checkbox" id="ckHat"> party hat</label>
+    <label><input type="checkbox" id="ckWings"> wings — flies to far calls</label>
     <label><input type="checkbox" id="ckRoam" checked> free roam</label>
   </div>
   <div class="sect">PIGMENT</div>
@@ -170,7 +187,7 @@ const PRESETS={
     neckLen:.24, neckUp:.05, headR:.125, headLen:.34, snout:.5,
     lu:.30, ll:.34, legR:.05, stance:[.46,.44], lead:[.16,-.08],
     stepThresh:.30, stepDur:.17, stepH:.11, speed:1.5, stride:.55,
-    undulate:.07, tailN:6, tailLen:1.15, bob:.015,
+    undulate:.07, tailN:6, tailLen:1.15, bob:.015, post:.05,
     ears:false, antennae:false, palps:false, spikesDefault:true,
     dyn:[1.6,.5,1.2], pal:'moss', k:.055
   },
@@ -180,7 +197,7 @@ const PRESETS={
     neckLen:.30, neckUp:.14, headR:.13, headLen:.38, snout:.45,
     lu:.33, ll:.29, fs:.20, legR:.055, stance:[.26,.24], lead:[.14,-.10],
     stepThresh:.34, stepDur:.15, stepH:.14, speed:2.1, stride:.7,
-    undulate:0, tailN:5, tailLen:.85, bob:.03,
+    undulate:0, tailN:5, tailLen:.85, bob:.03, post:.9,
     ears:true, antennae:false, palps:false, spikesDefault:false,
     dyn:[2.2,.7,.9], pal:'ember', k:.05
   },
@@ -190,9 +207,31 @@ const PRESETS={
     neckLen:.20, neckUp:.02, headR:.11, headLen:.22, snout:.85,
     lu:.42, ll:.50, legR:.032, stance:[.52,.66,.52], lead:[.34,0,-.30],
     stepThresh:.22, stepDur:.09, stepH:.10, speed:2.5, stride:.38,
-    undulate:0, tailN:0, tailLen:0, bob:.012, abdomen:true,
+    undulate:0, tailN:0, tailLen:0, bob:.012, abdomen:true, post:.35,
     ears:false, antennae:true, palps:true, spikesDefault:false,
     dyn:[3.5,.45,1.6], pal:'tide', k:.04
+  },
+  rex:{ // theropod: biped zigzag legs, tiny arms, big jaw, counterweight tail
+    pairs:1, mode:'zigzag', soloU:.8,
+    bodyLen:1.35, chestH:.78, hipH:.88, chestR:.26, midR:.29, hipR:.33,
+    neckLen:.30, neckUp:.10, headR:.23, headLen:.62, snout:.7,
+    jaw:true, teeth:true, arms:true,
+    lu:.46, ll:.40, fs:.30, legR:.085, stance:[.24], lead:[.10],
+    stepThresh:.44, stepDur:.22, stepH:.22, speed:2.2, stride:1.05,
+    undulate:0, tailN:8, tailLen:1.5, bob:.05, post:.95,
+    ears:false, antennae:false, palps:false, spikesDefault:false,
+    dyn:[1.5,.8,.7], pal:'fossil', k:.06
+  },
+  wyvern:{ // bird group: biped + wings, flies to far calls
+    pairs:1, mode:'zigzag', soloU:.75,
+    bodyLen:.95, chestH:.58, hipH:.62, chestR:.22, midR:.19, hipR:.20,
+    neckLen:.34, neckUp:.16, headR:.13, headLen:.42, snout:.5, jaw:true,
+    lu:.34, ll:.30, fs:.22, legR:.05, stance:[.22], lead:[.08],
+    stepThresh:.34, stepDur:.16, stepH:.16, speed:2.0, stride:.75,
+    undulate:0, tailN:6, tailLen:1.2, bob:.03, post:.95,
+    wings:true, wingScale:1.05,
+    ears:false, antennae:false, palps:false, spikesDefault:true,
+    dyn:[2.4,.6,1.1], pal:'dusk', k:.05
   }
 };
 
@@ -202,6 +241,7 @@ const PALETTES={
   ember:['#d96844','#f6d7a2','#9c4030','#552334','#46b8a5','#f2e2b3'],
   tide :['#4f8fa8','#d8ead9','#35617e','#28405c','#e5975f','#efd9a0'],
   dusk :['#8a6fae','#e3d3e9','#5d4a85','#3d2f5c','#e8b04e','#f0e6d2'],
+  fossil:['#7d6a47','#d3c497','#5d4e35','#3e3122','#4db8a8','#e8b04e'],
 };
 const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
 
@@ -217,6 +257,12 @@ const st={
   legScale:1, radScale:1, wobble:0,
   spikes:true, hat:false, roam:!REDUCED,
   pal:'moss', time:0,
+  wings:false, wOpen:0, air:0, flap:0,
+  restOn:false, rest:0,
+  act:null, actT:0, _struck:false, jawEnv:0,
+  jumpY:0, jumpVy:0, crouch:0, imp:V(), fw:V(1,0,0),
+  eyeScale:1, blinkNext:2, blinkT:-1,
+  pairsN:2, posture:.5, hMul:1,
 };
 
 function initCreature(name){
@@ -227,12 +273,8 @@ function initCreature(name){
   st.sodChest=new SOD3(...P.dyn,st.leader);
   st.sodLook =new SOD3(P.dyn[0]*1.2,P.dyn[1],P.dyn[2],add(st.leader,V(1,0,0)));
   st.hip=add(st.leader,V(-P.bodyLen,0,0)); st.hip[1]=P.hipH;
-  // legs
-  st.legs=[];
-  for(let j=0;j<P.pairs;j++)for(const s of[1,-1]){
-    st.legs.push({j,s,group:(j+(s>0?0:1))%2,foot:V(keep[0],0.04,keep[2]+s*P.stance[j]),
-      stepping:false,t:0,from:V(),to:V(),cool:0});
-  }
+  // legs (Universal Limb Class, any pair count)
+  buildLegs(P.pairs);
   // tail
   st.tail=[];
   const segL=P.tailN?P.tailLen/P.tailN:0;
@@ -241,6 +283,12 @@ function initCreature(name){
   st.antTips=[new SOD3(2.8,.32,1.8,add(st.leader,V(0,.5,.2))),
               new SOD3(2.8,.32,1.8,add(st.leader,V(0,.5,-.2)))];
   st.spikes=P.spikesDefault; st.hat=false; st.pal=P.pal;
+  st.wings=!!P.wings; st.air=0; st.wOpen=0; st.flap=0;
+  st.restOn=false; st.rest=0; st.act=null; st.jawEnv=0;
+  st.jumpY=0; st.jumpVy=0; st.crouch=0; st.imp=V();
+  st.posture=P.post;
+  if(name==='rex')cam.dist=Math.max(cam.dist,8.5);
+  if(name==='wyvern')cam.dist=Math.max(cam.dist,7.5);
   dyn.f=P.dyn[0]; dyn.z=P.dyn[1]; dyn.r=P.dyn[2];
   syncUI();
 }
@@ -263,19 +311,50 @@ function simulate(dt){
   st.time+=dt;
   const t=st.time;
 
+  // --- actions: procedural overlays, no keyframes ---
+  if(st.act){
+    st.actT+=dt; const q=st.actT;
+    if(st.act==='attack'){
+      st.jawEnv=Math.sin(Math.PI*clamp(q/.55,0,1));
+      if(q<.16)st.imp=add(st.imp,scl(st.fw,-2.6*dt));            // wind-up recoil
+      else if(!st._struck){st._struck=true;st.imp=add(st.imp,scl(st.fw,4.4));} // lunge
+      if(q>.7){st.act=null;st._struck=false;}
+    }else if(st.act==='dash'){
+      if(q>.38)st.act=null;
+    }else if(st.act==='jump'){
+      st.crouch=Math.min(q/.14,1);                               // squash before…
+      if(q>=.14){st.act=null;if(st.jumpY<=0)st.jumpVy=3.4;}      // …launch
+    }
+  }else st.jawEnv*=Math.exp(-9*dt);
+  st.crouch*=Math.exp(-6*dt);
+  st.imp=scl(st.imp,Math.exp(-5.5*dt));
+  if(st.jumpVy!==0||st.jumpY>0){                                 // ballistic arc
+    st.jumpVy-=9.5*dt; st.jumpY+=st.jumpVy*dt;
+    if(st.jumpY<=0){st.jumpY=0;st.jumpVy=0;st.crouch=Math.max(st.crouch,.8);}
+  }
+  st.rest+=((st.restOn?1:0)-st.rest)*Math.min(1,dt*2.2);
+
   // --- steering toward target ---
   const toT=sub(st.target,st.leader); toT[1]=0;
   const dist=len(toT);
-  const desired=dist>.45?scl(nrm(toT),Math.min(P.speed,dist*1.8)):V();
+  // winged creatures take off for far calls, land near them
+  st.air+=(((st.wings&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
+  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95);
+  const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*1.8)):V();
   const k=1-Math.exp(-4*dt);
   st.vel=mix(st.vel,desired,k);
-  st.leader=add(st.leader,scl(st.vel,dt));
-  st.leader[1]=P.chestH*st.legScaleH();
+  st.leader=add(st.leader,scl(add(st.vel,st.imp),dt));
+  // height: posture & leg morphs, rest, jump, flight altitude
+  const postHF=P.mode==='zigzag'?1:(0.85+0.5*st.posture)/(0.85+0.5*P.post);
+  const legHF=P.mode==='zigzag'?(1+(st.legScale-1)*.8):1;
+  st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest);
+  const groundY=P.chestH*st.hMul;
+  st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY;
   const speed=len(st.vel);
   st.speedN=clamp(speed/P.speed,0,1);
 
   // --- free-roam brain ---
-  if(dist<.5&&t>st.nextThink){
+  if(!st.restOn&&dist<.5&&t>st.nextThink){
     if(st.roam&&Math.random()<.6){
       const a=Math.random()*6.283, r=1.2+Math.random()*4;
       st.target=[Math.cos(a)*r,0,Math.sin(a)*r];
@@ -286,21 +365,28 @@ function simulate(dt){
   // --- Phase V: body follows the leader through the dynamics system ---
   const chestS=st.sodChest.update(dt,st.leader);
   st.phase+=speed*dt/P.stride;
-  const bobY=Math.sin(st.phase*Math.PI*4)*P.bob*st.speedN     // gait bob (Phase VI)
-            +Math.sin(t*1.7)*.006;                            // idle breathing
-  st.chest=[chestS[0],P.chestH*st.legScaleH()+bobY,chestS[2]];
+  // wingbeat: open in the air, flush against the body on the ground
+  const wTgt=st.wings?(st.air>.03?1:(st.speedN>.75?.3:0)):0;
+  st.wOpen+=(wTgt-st.wOpen)*Math.min(1,dt*3);
+  if(st.wOpen>.02)st.flap+=dt*Math.PI*2*(1.5+2.1*st.air);
+  const bobY=Math.sin(st.phase*Math.PI*4)*P.bob*st.speedN*(1-st.air) // gait bob
+            +Math.sin(t*1.7)*.006*(1+st.rest*1.6)                    // breathing
+            +st.air*Math.sin(st.flap)*.05;                           // wingbeat heave
+  st.chest=[chestS[0],chestS[1]+bobY,chestS[2]];
 
   // --- spine: hip trails the chest like a rope (bends through turns) ---
   let hv=sub(st.hip,st.chest); hv[1]=0;
   if(len(hv)<1e-4)hv=V(-1,0,0);
   const hipXZ=add([st.chest[0],0,st.chest[2]],scl(nrm(hv),P.bodyLen));
-  st.hip=[hipXZ[0],P.hipH*st.legScaleH()+bobY*.6,hipXZ[2]];
+  st.hip=[hipXZ[0],st.chest[1]+(P.hipH-P.chestH)*st.hMul*(1-st.air)+st.air*.16,hipXZ[2]];
   let fw=sub(st.chest,st.hip); fw[1]=0; fw=nrm(fw);
   const side=nrm(cross(V(0,1,0),fw));
 
   // --- look point (also second-order → overshoot/anticipation shows in the head) ---
   let want;
-  if(speed>.3) want=[st.target[0],.35,st.target[2]];
+  if(st.act==='attack'&&st.actT>.12) want=add(st.chest,add(scl(st.fw,2.2),V(0,-.15,0)));
+  else if(st.rest>.4) want=add(st.chest,add(scl(st.fw,.9),V(0,-st.rest*.45,0)));
+  else if(speed>.3) want=[st.target[0],.35,st.target[2]];
   else{
     if(t>st.idleLook){
       st.idleLook=t+1+Math.random()*1.6;
@@ -315,10 +401,19 @@ function simulate(dt){
   const rs=st.radScale, ls=st.legScale;
   const restY=P.legR*rs*.8;
   const spinePt=u=>mix(st.chest,st.hip,u);
-  const attachU=P.pairs===2?[0.02,0.98]:[0.0,0.5,1.0];
+  const stanceMul=(P.mode==='zigzag'?1.15-.2*st.posture:1.3-.75*st.posture)
+                 *(P.mode==='sprawl'?ls:1)*(1-.45*st.rest);
+  const tucked=st.air>.5||st.jumpY>.14;
   for(const leg of st.legs){
-    const home=add(add(spinePt(attachU[leg.j]),scl(fw,P.lead[leg.j])),
-                   scl(side,leg.s*P.stance[leg.j]*(P.mode==='sprawl'?ls:1)));
+    if(tucked){ // feet fold under the body in flight and mid-jump
+      const tuck=add(spinePt(leg.u),add(scl(side,leg.s*leg.stance*.5),
+        add(scl(fw,-.08),V(0,-(P.lu+P.ll)*ls*.42,0))));
+      leg.foot=mix(leg.foot,tuck,Math.min(1,dt*8));
+      leg.stepping=false;
+      continue;
+    }
+    const home=add(add(spinePt(leg.u),scl(fw,leg.lead*(1-.7*st.rest))),
+                   scl(side,leg.s*leg.stance*stanceMul));
     home[1]=restY;
     if(leg.stepping){
       leg.t+=dt/P.stepDur;
@@ -337,14 +432,33 @@ function simulate(dt){
     }
   }
 
+  st.fw=fw;
+  // blink (and half-lidded eyes while resting)
+  if(st.blinkT<0&&t>st.blinkNext){st.blinkT=0;st.blinkNext=t+2.5+Math.random()*3;}
+  if(st.blinkT>=0){st.blinkT+=dt;if(st.blinkT>.13)st.blinkT=-1;}
+  const bl=st.blinkT>=0?Math.sin(Math.PI*st.blinkT/.13):0;
+  st.eyeScale=(1-.8*bl)*(1-.5*st.rest);
   return {fw,side,lookS,t};
 }
-st.legScaleH=function(){ // longer legs raise the stance a bit
-  return PRESETS[presetName].mode==='sprawl'?1: (1+(st.legScale-1)*.8);
-};
+
+// legs from the Universal Limb Class — any pair count, params sampled along the spine
+function sampleArr(arr,j,n){
+  if(n<=1||arr.length===1)return arr[0];
+  const t=j/(n-1)*(arr.length-1),i=Math.floor(t),f=t-i;
+  return arr[Math.min(i,arr.length-1)]*(1-f)+arr[Math.min(i+1,arr.length-1)]*f;
+}
+function buildLegs(n){
+  st.pairsN=n;st.legs=[];
+  const us=n===1?[P.soloU!==undefined?P.soloU:.5]
+    :n===2?[.02,.98]:Array.from({length:n},(_,j)=>j/(n-1));
+  for(let j=0;j<n;j++)for(const s of[1,-1])
+    st.legs.push({j,s,u:us[j],stance:sampleArr(P.stance,j,n),lead:sampleArr(P.lead,j,n),
+      group:(j+(s>0?0:1))%2,foot:[st.leader[0],.04,st.leader[2]+s*.3],
+      stepping:false,t:0,from:V(),to:V(),cool:0});
+}
 
 // ---------- Phase II/III: emit the tube list ----------
-const MAXN=40;
+const MAXN=56;
 const segsA=new Float32Array(MAXN*4), segsB=new Float32Array(MAXN*4), segsM=new Float32Array(MAXN);
 let nSoft=0,nHard=0,bCenter=V(),bRad=1;
 
@@ -377,17 +491,60 @@ function buildSkeleton(dt){
   S(sub(head,scl(hf,P.headLen*.35)),add(head,scl(hf,P.headLen*.5)),
     P.headR*rs,P.headR*rs*P.snout,1,soft);
 
+  // jaw — hinges open during attacks
+  if(P.jaw){
+    const jp=add(head,add(scl(hf,-P.headLen*.05),scl(hu,-P.headR*rs*.25)));
+    const ja=.16+st.jawEnv*.55;
+    const jd=nrm(add(scl(hf,Math.cos(ja)),scl(hu,-Math.sin(ja))));
+    S(jp,add(jp,scl(jd,P.headLen*.55)),P.headR*rs*.5,P.headR*rs*.22,1,soft);
+  }
+
   // ears
   if(P.ears)for(const s of[1,-1]){
     const b=add(head,add(scl(hu,P.headR*.8),add(scl(hs,s*P.headR*.6),scl(hf,-P.headR*.25))));
     S(b,add(b,add(scl(hu,.16),add(scl(hs,s*.05),scl(hf,-.05)))),.05*rs,.012,1,soft);
   }
 
+  // wings — flush along the body when folded, flapping limb-fan when open
+  if(st.wings){
+    const wsc=(P.wingScale||1)*(P.chestR/.22);
+    const open=st.wOpen, fl=st.flap;
+    for(const s of[1,-1]){
+      const sh=add(st.chest,add(scl(side,s*P.chestR*rs*.7),V(0,P.chestR*rs*.4,0)));
+      const F1=.35+Math.sin(fl)*.75, F2=.10+Math.sin(fl-.7)*.95;
+      const d1=add(scl(side,s*Math.cos(F1)),V(0,Math.sin(F1),0));
+      const d2=add(scl(side,s*Math.cos(F2)),V(0,Math.sin(F2),0));
+      const eO=add(sh,add(scl(d1,.34*wsc),scl(fw,-.04)));
+      const wO=add(eO,add(scl(d2,.36*wsc),scl(fw,-.08)));
+      const tO=add(wO,add(scl(d2,.30*wsc),scl(fw,-.16)));
+      const eF=add(sh,add(scl(fw,-.22*wsc),scl(side,s*.03)));
+      const wF=add(eF,add(scl(fw,-.26*wsc),V(0,-.02,0)));
+      const tF=add(wF,scl(fw,-.24*wsc));
+      const e=mix(eF,eO,open),w=mix(wF,wO,open),tp=mix(tF,tO,open);
+      S(sh,e,.062*wsc,.048*wsc,2,soft);
+      S(e,w,.048*wsc,.036*wsc,2,soft);
+      S(w,tp,.036*wsc,.014*wsc,6,soft);
+      for(let m=0;m<4;m++){ // membrane struts fanning backward
+        const an=mix(e,tp,m/3);
+        const bk=add(scl(fw,-(.42-.08*m)*wsc),V(0,-.09*open,0));
+        S(an,add(an,bk),.032*wsc,.008,2,soft);
+      }
+    }
+  }
+
+  // rex arms — same solver, comically short
+  if(P.arms)for(const s of[1,-1]){
+    const shA=add(st.chest,add(scl(fw,P.chestR*rs*.55),
+      add(scl(side,s*P.chestR*rs*.6),V(0,-P.chestR*rs*.1,0))));
+    const tgt=add(shA,add(scl(fw,.16),V(0,-.18+Math.sin(t*3+s)*.012,0)));
+    const {knee:el,foot:hd}=solve2(shA,tgt,.15,.13,add(scl(fw,-1),V(0,-.3,0)));
+    S(shA,el,.05,.04,2,soft); S(el,hd,.04,.025,2,soft);
+  }
+
   // Phase IV legs — one Universal Limb Class, different pole vectors
-  const attachU=P.pairs===2?[0.02,0.98]:[0.0,0.5,1.0];
   for(const leg of st.legs){
-    const bodyR=(leg.j===0?P.chestR:P.midR)*rs;
-    const spine=mix(st.chest,st.hip,attachU[leg.j]);
+    const bodyR=(P.chestR+(P.hipR-P.chestR)*leg.u)*rs;
+    const spine=mix(st.chest,st.hip,leg.u);
     const lu=P.lu*ls, ll=P.ll*ls, lr=P.legR*rs;
     if(P.mode==='zigzag'){
       // the Mammal Problem: solve hip→ankle two-bone, hang the metatarsal below —
@@ -395,17 +552,17 @@ function buildSkeleton(dt){
       const hipJ=add(spine,add(scl(side,leg.s*bodyR*.55),V(0,-bodyR*.15,0)));
       const fs=P.fs*ls;
       const ankleT=add(leg.foot,add(V(0,fs*.85,0),scl(fw,-fs*.35)));
-      const pole=add(scl(fw,leg.j===0?-1:1),V(0,.25,0)); // elbow back, knee forward
+      const pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
       const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
       S(hipJ,knee,lr*1.5,lr,2,soft);
       S(knee,ank,lr,lr*.8,2,soft);
       S(ank,add(leg.foot,scl(fw,.09)),lr*.8,lr*.6,2,soft);
     }else{
-      const out=P.mode==='spider'?.95:.85;
-      const hipJ=add(spine,add(scl(side,leg.s*bodyR*out),V(0,-bodyR*.05,0)));
-      const pole=P.mode==='spider'
-        ? add(V(0,1.5,0),scl(side,leg.s*.5))
-        : add(V(0,.7,0),scl(side,leg.s));
+      // posture morphs the joint: sprawled side-poles → upright forward-poles
+      const out=(P.mode==='spider'?.95:.9)-.4*st.posture;
+      const hipJ=add(spine,add(scl(side,leg.s*bodyR*out),V(0,-bodyR*(.05+.25*st.posture),0)));
+      const pole=nrm(mix(add(V(0,.7,0),scl(side,leg.s)),
+                         add(V(0,1.3,0),scl(fw,.4)),st.posture));
       const {knee,foot}=solve2(hipJ,leg.foot,lu,ll,pole);
       S(hipJ,knee,lr*1.4,lr,2,soft);
       S(knee,foot,lr,lr*.65,2,soft);
@@ -462,8 +619,12 @@ function buildSkeleton(dt){
   // hard prims (plain min — they stay crisp): eyes + hat
   for(const s of[1,-1]){
     const e=add(head,add(scl(hf,P.headLen*.16),add(scl(hs,s*P.headR*.72),scl(hu,P.headR*.34))));
-    const er=P.headR*(P.mode==='spider'?.42:.3);
+    const er=Math.max(P.headR*(P.mode==='spider'?.42:.3)*st.eyeScale,.012);
     S(e,e,er,er,4,hard);
+  }
+  if(P.teeth)for(let i=0;i<3;i++){
+    const b=add(head,add(scl(hf,P.headLen*(.14+.13*i)),scl(hu,-P.headR*rs*.40)));
+    S(b,add(b,add(scl(hu,-.065),scl(hf,.015))),.02,.004,7,hard);
   }
   if(st.hat){
     const b=add(head,scl(hu,P.headR*.85));
@@ -547,10 +708,10 @@ vec3 calcN(vec3 p){
 }
 float shadow(vec3 ro,vec3 rd){
   float res=1.,t=.03;
-  for(int i=0;i<24;i++){
+  for(int i=0;i<34;i++){
     float h=mapM(ro+rd*t);
     res=min(res,9.*h/t);
-    t+=clamp(h,.02,.4);
+    t+=clamp(h,.015,.25);
     if(res<.01||t>7.)break;
   }
   return clamp(res,0.,1.);
@@ -617,6 +778,7 @@ void main(){
     else if(mi==3)base=uPal[3];
     else if(mi==4){base=vec3(.045,.04,.05);shin=90.;spk=1.4;}
     else if(mi==5){base=uPal[4];shin=40.;spk=.5;}
+    else if(mi==7){base=uPal[1]*1.08;shin=60.;spk=.8;}
     else {base=uPal[5];shin=40.;spk=.5;}
 
     float sh=shadow(p+n*.012,uSun);
@@ -625,7 +787,7 @@ void main(){
     float skyA=.5+.5*n.y;
     float bnc=clamp(-n.y,0.,1.);
     float fre=pow(clamp(1.+dot(rd,n),0.,1.),3.);
-    vec3 lin=vec3(1.25,.98,.72)*1.35*dif
+    vec3 lin=vec3(1.25,.98,.72)*1.18*dif
             +vec3(.40,.48,.62)*.55*skyA*ao
             +vec3(.45,.38,.28)*.35*bnc*ao;
     col=base*lin;
@@ -737,6 +899,8 @@ bindSlider('sr','or',v=>{dyn.r=v;applyDyn();});
 bindSlider('sl','ol',v=>st.legScale=v);
 bindSlider('sp','op',v=>st.radScale=v);
 bindSlider('sw','ow',v=>st.wobble=v);
+bindSlider('spairs','opairs',v=>buildLegs(Math.round(v)));
+bindSlider('spost','opost',v=>st.posture=v);
 function applyDyn(){
   st.sodChest.set(dyn.f,dyn.z,dyn.r);
   st.sodLook.set(dyn.f*1.2,dyn.z,dyn.r);
@@ -744,6 +908,30 @@ function applyDyn(){
 $('ckSpikes').addEventListener('change',e=>st.spikes=e.target.checked);
 $('ckHat').addEventListener('change',e=>st.hat=e.target.checked);
 $('ckRoam').addEventListener('change',e=>st.roam=e.target.checked);
+$('ckWings').addEventListener('change',e=>st.wings=e.target.checked);
+function startAction(n){
+  if(n==='rest'){
+    st.restOn=!st.restOn;
+    if(st.restOn)st.target=[st.leader[0],0,st.leader[2]];
+    $('btnRest').classList.toggle('on',st.restOn);
+    return;
+  }
+  if(st.restOn){st.restOn=false;$('btnRest').classList.remove('on');}
+  if(n==='jump'&&(st.jumpY>0||st.air>.5))return;
+  if(n==='dash')st.imp=add(st.imp,scl(st.fw,6.5));
+  st.act=n;st.actT=0;st._struck=false;
+}
+$('actions').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;startAction(b.dataset.a);
+});
+addEventListener('keydown',e=>{
+  if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
+  const k=e.key===' '?'space':e.key.toLowerCase();
+  if(k==='space'){e.preventDefault();startAction('jump');}
+  else if(k==='a')startAction('attack');
+  else if(k==='d')startAction('dash');
+  else if(k==='r')startAction('rest');
+});
 $('presets').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   initCreature(b.dataset.p);
@@ -763,9 +951,13 @@ function syncUI(){
   document.querySelectorAll('.sw').forEach(b=>
     b.classList.toggle('on',b.dataset.pal===st.pal));
   $('ckSpikes').checked=st.spikes;$('ckHat').checked=st.hat;$('ckRoam').checked=st.roam;
+  $('ckWings').checked=st.wings;
+  $('btnRest').classList.toggle('on',st.restOn);
   $('sf').value=dyn.f;$('sz').value=dyn.z;$('sr').value=dyn.r;
   $('of').value=fmt(dyn.f);$('oz').value=fmt(dyn.z);$('or').value=fmt(dyn.r);
   $('ol').value=fmt(st.legScale);$('op').value=fmt(st.radScale);$('ow').value=fmt(st.wobble);
+  $('spairs').value=st.pairsN;$('opairs').value=st.pairsN;
+  $('spost').value=st.posture;$('opost').value=fmt(st.posture);
   applyDyn();
 }
 $('ptoggle').addEventListener('click',()=>$('panel').classList.toggle('hidden'));

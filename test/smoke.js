@@ -1,9 +1,11 @@
 // Headless smoke test: run the page's <script> with stubbed DOM/WebGL,
-// drive 600 frames per preset, assert no NaNs in the packed segment data.
+// drive the sim across presets, morphs, actions and flight; assert sanity.
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const src = fs.existsSync(__dirname + '/../index.html')
+  ? __dirname + '/../index.html' : __dirname + '/monster-lab.html';
+const html = fs.readFileSync(src, 'utf8');
 const js = html.split('<script>')[1].split('</script>')[0];
 
 function makeEl() {
@@ -62,16 +64,40 @@ vm.runInContext(`
         throw new Error(tag + ': NaN in segment data at ' + i);
     }
     if (!st.chest.every(isFinite)) throw new Error(tag + ': NaN chest');
+    if (nSoft + nHard > 56) throw new Error(tag + ': over segment budget');
     console.log(tag, '| segs soft:' + nSoft, 'hard:' + nHard,
       '| chest:', st.chest.map(v => v.toFixed(2)).join(','),
-      '| bound:', bRad.toFixed(2));
+      '| air:', st.air.toFixed(2), '| rest:', st.rest.toFixed(2));
   }
+  st.roam = false;
+  st.target = [2, 0, 1];
   __drive(600); __check('skink');
-  st.hat = true; st.wobble = 0.5; st.target = [3, 0, -2];
-  initCreature('beast'); __drive(600); __check('beast');
-  initCreature('bug');   __drive(600); __check('bug');
-  st.legScale = 1.5; st.radScale = 1.4; __drive(300); __check('bug-max-morph');
-  st.legScale = 0.7; st.radScale = 0.7; __drive(300); __check('bug-min-morph');
-  initCreature('beast'); st.legScale = 0.7; __drive(300); __check('beast-short-legs');
+
+  initCreature('rex'); st.target = [3, 0, -2];
+  __drive(500); __check('rex-walk');
+  startAction('attack'); __drive(15);
+  if (st.jawEnv < 0.5) throw new Error('jaw did not open: ' + st.jawEnv);
+  __check('rex-attack'); __drive(120);
+  startAction('jump'); __drive(20);
+  if (!(st.jumpY > 0.02 || st.jumpVy > 0)) throw new Error('no jump lift');
+  __drive(120); __check('rex-jump-landed');
+  startAction('dash'); __drive(90); __check('rex-dash');
+  startAction('rest'); __drive(300); __check('rex-rest');
+  if (st.rest < 0.8) throw new Error('rest did not settle: ' + st.rest);
+  startAction('rest'); // wake
+
+  initCreature('wyvern'); st.target = [-6, 0, 4];
+  __drive(110);
+  if (st.air < 0.6) throw new Error('wyvern not airborne: ' + st.air);
+  if (st.chest[1] < 1.0) throw new Error('wyvern flying too low: ' + st.chest[1].toFixed(2));
+  __check('wyvern-flying');
+  st.target = [st.leader[0], 0, st.leader[2]];
+  __drive(400);
+  if (st.air > 0.25) throw new Error('wyvern did not land: ' + st.air);
+  __check('wyvern-landed');
+
+  initCreature('bug'); buildLegs(4); st.wings = true; st.target = [4, 0, -3];
+  __drive(400); __check('bug-8legs-winged');
+  st.posture = 1; __drive(200); __check('bug-upright');
   console.log('SMOKE OK');
 `, ctx, { filename: 'driver.js' });
