@@ -92,6 +92,14 @@ vm.runInContext(`
   __checkFinite('first-blood');
   if (boss.hp >= boss.maxHp) throw new Error('player attacks never connected');
 
+  // 3b. combo buffering: click mid-strike chains to stage 2
+  __drive(60); // let any current strike finish
+  playerAttack(); __drive(10);           // stage 0, past wind-up
+  playerAttack();                        // buffer stage 1
+  __drive(40);
+  if (player._comboN !== 1) throw new Error('combo did not chain: ' + player._comboN);
+  __drive(60); __checkFinite('combo');
+
   // 4. enrage at 50%
   boss.hp = boss.maxHp * 0.5 + 5;
   hitBoss(20, 'body', boss.chest);

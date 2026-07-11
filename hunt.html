@@ -74,7 +74,7 @@
   <div class="t1">MONSTER <b>HUNT</b></div>
   <div class="t2">QUEST 01 · SLAY THE ALPHA REX · SCARRED CRATER</div>
 </div>
-<div class="hints"><span>WASD</span> MOVE · <span>CLICK/J</span> ATTACK · <span>⇧</span> DASH i-frames · <span>␣</span> JUMP · <span>TAB</span> LOCK-ON · <span>E</span> CARVE · <span>M</span> MUTE · <span>DRAG</span> ORBIT</div>
+<div class="hints"><span>WASD</span> MOVE · <span>CLICK/J</span> ATTACK — CHAIN ×3 · <span>⇧</span> DASH i-frames · <span>␣</span> JUMP (over tail swipes) · <span>TAB</span> LOCK-ON · <span>E</span> CARVE · <span>M</span> MUTE</div>
 
 <div id="hud">
   <div id="hpwrap">
@@ -274,16 +274,41 @@ function simulate(cr,dt){
   if(st.dead){st.restOn=true;st.act=null;st.moveDir=V();}
 
   // --- actions: procedural overlays, no keyframes ---
+  // strikes are profile-driven: wind (readable tell — jaw creeps open, body
+  // rears through the dynamics) → snap impulse → recovery (punishable)
+  st._spin=0;
   if(st.act){
     st.actT+=dt; const q=st.actT;
-    if(st.act==='attack'){
-      st.jawEnv=Math.sin(Math.PI*clamp(q/.55,0,1));
-      if(q<.16)st.imp=add(st.imp,scl(st.fw,-2.6*dt));            // wind-up recoil
-      else if(!st._struck){st._struck=true;st.imp=add(st.imp,scl(st.fw,4.4));} // lunge
-      if(q>.7){st.act=null;st._struck=false;}
+    if(st.act==='strike'){
+      const pf=st.actProf;
+      if(q<pf.wind){
+        st.jawEnv=Math.max(st.jawEnv,pf.jaw*(q/pf.wind)*.5);
+        st.imp=add(st.imp,scl(st.fw,-pf.recoil*dt));
+      }else if(!st._struck){
+        st._struck=true; st.jawEnv=pf.jaw;
+        st.imp=add(st.imp,scl(pf.dir||st.fw,pf.imp));
+      }else if(q>pf.wind+pf.active+pf.rec){st.act=null;st._struck=false;}
+      else st.jawEnv*=Math.exp(-5*dt);
+    }else if(st.act==='tailswipe'){
+      const pf=st.actProf;
+      if(q<pf.wind)st.crouch=Math.max(st.crouch,.35*(q/pf.wind)); // hunker tell
+      else if(q<pf.wind+pf.dur)st._spin=pf.rate;   // whirl — the tail chain whips itself
+      else if(q>pf.wind+pf.dur+pf.rec)st.act=null;
+    }else if(st.act==='charge'){
+      const pf=st.actProf;
+      if(q<pf.wind){                               // paw the ground, head low
+        st.crouch=Math.max(st.crouch,.28+.14*Math.sin(q*18));
+        st.jawEnv=Math.max(st.jawEnv,.25);
+      }else if(!st._struck){
+        st._struck=true;
+        const d2=sub(pf.aim(),st.leader); d2[1]=0;
+        st.imp=add(st.imp,scl(nrm(d2),pf.imp));
+      }else if(q>pf.wind+pf.active){st.act=null;st._struck=false;
+        st.imp=scl(st.imp,.25);}                   // dig in, skid stop
     }else if(st.act==='roar'){
       st.jawEnv=Math.sin(Math.PI*clamp(q/.9,0,1))*.95;
-      if(q>.95)st.act=null;
+      if(q>.35&&!st._struck){st._struck=true;onRoar(st);}
+      if(q>.95){st.act=null;st._struck=false;}
     }else if(st.act==='dash'){
       if(q>.38)st.act=null;
     }else if(st.act==='jump'){
@@ -311,7 +336,7 @@ function simulate(cr,dt){
   st.air+=(((st.wings&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
   const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95);
   const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*1.8)):V();
-  const k=1-Math.exp(-4*dt);
+  const k=1-Math.exp(-(st.isPlayer?7:4)*dt); // the hunter turns on a dime
   st.vel=mix(st.vel,desired,k);
   st.leader=add(st.leader,scl(add(st.vel,st.imp),dt));
   // arena bounds + boulder push-out
@@ -358,6 +383,10 @@ function simulate(cr,dt){
   // --- spine: hip trails the chest like a rope (bends through turns) ---
   let hv=sub(st.hip,st.chest); hv[1]=0;
   if(len(hv)<1e-4)hv=V(-1,0,0);
+  if(st._spin){ // tail-swipe whirl: rotate the heading, the follow chain does the rest
+    const a=st._spin*dt, c=Math.cos(a), s=Math.sin(a);
+    hv=[hv[0]*c-hv[2]*s,0,hv[0]*s+hv[2]*c];
+  }
   const hipXZ=add([st.chest[0],0,st.chest[2]],scl(nrm(hv),P.bodyLen));
   st.hip=[hipXZ[0],st.chest[1]+(P.hipH-P.chestH)*st.hMul*(1-st.air)+st.air*.16,hipXZ[2]];
   let fw=sub(st.chest,st.hip); fw[1]=0; fw=nrm(fw);
@@ -365,7 +394,7 @@ function simulate(cr,dt){
 
   // --- look point (also second-order → overshoot/anticipation shows in the head) ---
   let want;
-  if(st.act==='attack'&&st.actT>.12) want=add(st.chest,add(scl(st.fw,2.2),V(0,-.15,0)));
+  if((st.act==='strike'||st.act==='charge')&&st.actT>.1) want=add(st.chest,add(scl(st.fw,2.2),V(0,-.15,0)));
   else if(st.rest>.4) want=add(st.chest,add(scl(st.fw,.9),V(0,-st.rest*.45,0)));
   else if(speed>.3) want=[st.target[0],.35,st.target[2]];
   else{
@@ -885,17 +914,35 @@ function lockCam(dt){
 // ---------- input: WASD + orbit drag ----------
 const keys=new Set();
 let dashCool=0, muted=false;
+// 3-hit combo: snap · snap · lunging finisher — click during a strike to buffer the next
+const COMBO=[
+  {wind:.10,active:.16,rec:.22,imp:4.6,jaw:1.0, recoil:2.2,dmg:[18,24]},
+  {wind:.09,active:.16,rec:.24,imp:5.2,jaw:1.0, recoil:2.0,dmg:[22,28]},
+  {wind:.22,active:.20,rec:.44,imp:8.6,jaw:1.15,recoil:3.8,dmg:[34,44]},
+];
+function startStrike(cr,prof){
+  if(cr.dead||cr.act)return;
+  cr.restOn=false;
+  cr.act='strike'; cr.actT=0; cr._struck=false;
+  cr.actProf=prof;
+}
 function playerAttack(){
-  if(player.dead||game.carving||player.act)return;
-  player._hitDone=false;
-  startAction(player,'attack');
+  if(player.dead||game.carving)return;
+  if(player.act==='strike'){
+    if(player._struck&&player._comboN<COMBO.length-1)player._comboQ=true;
+    return;
+  }
+  if(player.act)return;
+  player._comboN=0; player._comboQ=false; player._hitDone=false;
+  startStrike(player,COMBO[0]);
 }
 function playerDash(){
   if(player.dead||game.carving||dashCool>0)return;
-  dashCool=.9; player.iFrames=.38;
+  dashCool=.8; player.iFrames=.38; player.crouch=Math.max(player.crouch,.3);
   const dir=len(player.moveDir)>.1?player.moveDir:player.fw;
-  player.imp=add(player.imp,scl(dir,6.5));
+  player.imp=add(player.imp,scl(dir,7.6));
   player.act='dash';player.actT=0;
+  noiseHit(.12,.25,2100); // whoosh
 }
 function startAction(cr,n){
   if(cr.dead)return;
@@ -1047,7 +1094,7 @@ boss.roam=true;
 let bossBaseSpeed=boss.P.speed;
 const game={
   over:false,failed:false,faints:0,loot:[],carveNodes:[],props:null,
-  severed:false,parts:{tail:130,legs:150},tiredHurt:0,rage:0,time:0,
+  severed:false,parts:{tail:130,legs:150},tiredHurt:0,rage:0,time:0,hitStop:0,
   ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,stam:100,enraged:false,fled:false,tiredT:0},
   slam:[0,0,-99,0],mark:{pos:V(0,0,0),amp:0},carving:null,
 };
@@ -1092,6 +1139,7 @@ function hitBoss(amt,tag,pos){
     }
   }
   dmgNum(pos,dmg,cls); sfx.hit(); cam.shake=Math.max(cam.shake,.12);
+  game.hitStop=Math.max(game.hitStop,.045+dmg*.0007); // connect freeze — bigger hits bite harder
   boss.imp=add(boss.imp,scl(nrm(sub(boss.leader,player.leader)),.5));
   aggro();
   if(boss.hp<=0&&!boss.dead)killBoss();
@@ -1102,6 +1150,7 @@ function hurtPlayer(amt,from){
   if(player.iFrames>0||player.dead||game.over||game.failed)return;
   amt=Math.round(amt);
   player.hp-=amt; flash(); sfx.hurt(); cam.shake=Math.max(cam.shake,.35);
+  game.hitStop=Math.max(game.hitStop,.08);
   dmgNum(add(player.chest,V(0,.3,0)),amt,'hurt');
   if(from){const kb=nrm(sub(player.leader,from));kb[1]=0;player.imp=add(player.imp,scl(kb,4.5));}
   player.iFrames=.5;
@@ -1114,27 +1163,60 @@ function onSlam(cr){
   const dd=Math.hypot(player.leader[0]-cr.leader[0],player.leader[2]-cr.leader[2]);
   if(dd<3.4&&player.jumpY<.25)hurtPlayer(10+20*(1-dd/3.4),cr.leader);
 }
+function onRoar(cr){ // roar is a concussion — shoves the hunter back, no damage
+  if(cr!==boss||player.dead)return;
+  const dd=Math.hypot(player.leader[0]-boss.leader[0],player.leader[2]-boss.leader[2]);
+  if(dd<5.5){
+    const kb=nrm(sub(player.leader,boss.leader)); kb[1]=0;
+    player.imp=add(player.imp,scl(kb,4.2));
+    cam.shake=Math.max(cam.shake,.5);
+  }
+}
 function combat(dt){
-  // player's lunge connects?
-  if(player.act==='attack'&&player._struck&&!player._hitDone){
-    let best={d:9,tag:null,at:player.jawTip};
-    for(const pt of[player.jawTip,player.headPos]){
-      const r=nearestPart(pt,boss.segs);
-      if(r.d<best.d)best={d:r.d,tag:r.tag,at:pt};
+  // buffered combo continuation
+  if(!player.act&&player._comboQ){
+    player._comboQ=false; player._comboN++; player._hitDone=false;
+    startStrike(player,COMBO[player._comboN]);
+  }
+  // player's strike connects? (only during the active window)
+  if(player.act==='strike'&&player._struck&&!player._hitDone){
+    const pf=player.actProf;
+    if(player.actT<pf.wind+pf.active+.06){
+      let best={d:9,tag:null,at:player.jawTip};
+      for(const pt of[player.jawTip,player.headPos]){
+        const r=nearestPart(pt,boss.segs);
+        if(r.d<best.d)best={d:r.d,tag:r.tag,at:pt};
+      }
+      if(best.d<.3){
+        player._hitDone=true;
+        hitBoss(pf.dmg[0]+Math.random()*(pf.dmg[1]-pf.dmg[0]),best.tag,best.at);
+      }
     }
-    if(best.d<.3){player._hitDone=true;hitBoss(26+Math.random()*10,best.tag,best.at);}
   }
   // boss bite connects?
-  if(boss.act==='attack'&&boss._struck&&!boss._bit){
-    const r=nearestPart(boss.jawTip,player.segs);
-    if(r.d<.45){boss._bit=true;sfx.bite();hurtPlayer(game.ai.enraged?30:20,boss.leader);}
+  if(boss.act==='strike'&&boss._struck&&!boss._bit){
+    const pf=boss.actProf;
+    if(boss.actT<pf.wind+pf.active+.06){
+      const r=nearestPart(boss.jawTip,player.segs);
+      if(r.d<.45){boss._bit=true;sfx.bite();hurtPlayer(game.ai.enraged?30:20,boss.leader);}
+    }
   }
-  // charge trample window
-  if(boss._chargeT!==undefined&&boss._chargeT<.8){
-    boss._chargeT+=dt;
+  // tail swipe: annulus around the hips while the whirl is live — jump it
+  if(boss.act==='tailswipe'&&!boss._swipeHit){
+    const pf=boss.actProf,q=boss.actT;
+    if(q>pf.wind&&q<pf.wind+pf.dur){
+      const dd=Math.hypot(player.leader[0]-boss.hip[0],player.leader[2]-boss.hip[2]);
+      if(dd<boss.P.tailLen*1.25&&player.jumpY<.45){
+        boss._swipeHit=true;
+        hurtPlayer(game.ai.enraged?26:18,boss.hip);
+      }
+    }
+  }
+  // charge trample
+  if(boss.act==='charge'&&boss._struck&&!boss._chargeHit){
     const dd=Math.hypot(player.leader[0]-boss.leader[0],player.leader[2]-boss.leader[2]);
-    if(!boss._chargeHit&&dd<boss.P.chestR+player.P.chestR+.5){
-      boss._chargeHit=true;hurtPlayer(16,boss.leader);
+    if(dd<boss.P.chestR+player.P.chestR+.5){
+      boss._chargeHit=true;hurtPlayer(game.ai.enraged?22:16,boss.leader);
     }
   }
 }
@@ -1267,19 +1349,31 @@ function bossAI(dt){
   if(ai.stam<=0){tired();return;}
   if(!boss.act&&!boss.restOn){
     boss.target=[player.leader[0]+player.vel[0]*.25,0,player.leader[2]+player.vel[2]*.25];
-    const biteR=2.4*boss.scale;
-    if(dist<biteR&&ai.atkCool<=0){
-      ai.atkCool=(ai.enraged?1.4:2.4)+Math.random()*.6; ai.stam-=10;
-      boss._bit=false; startAction(boss,'attack');
+    const biteR=2.5*boss.scale;
+    const rel=nrm([dvec[0],0,dvec[2]]);
+    const cosA=dot([boss.fw[0],0,boss.fw[2]],rel); // where is the hunter, relative to its snout
+    if(dist<boss.P.tailLen*1.15&&cosA<-.1&&ai.atkCool<=0){
+      // hunter is behind it — coil and whirl
+      ai.atkCool=(ai.enraged?1.6:2.6)+Math.random()*.5; ai.stam-=12;
+      boss._swipeHit=false;
+      boss.target=[boss.leader[0],0,boss.leader[2]];
+      boss.act='tailswipe'; boss.actT=0;
+      boss.actProf={wind:ai.enraged?.28:.42,dur:.55,rate:(Math.random()<.5?1:-1)*7,rec:.5};
+      log('It coils its tail!');
+    }else if(dist<biteR&&cosA>.3&&ai.atkCool<=0){
+      ai.atkCool=(ai.enraged?1.2:2.2)+Math.random()*.6; ai.stam-=10;
+      boss._bit=false;
+      startStrike(boss,{wind:ai.enraged?.26:.45,active:.22,rec:.55,imp:6.5,jaw:1,recoil:3.2});
     }else if(ai.enraged&&dist<5.5&&ai.slamCool<=0){
       ai.slamCool=12; ai.stam-=18;
       boss._slam=true; startAction(boss,'jump');
-    }else if(dist>4&&dist<11&&ai.chargeCool<=0){
+    }else if(dist>4.5&&dist<11&&ai.chargeCool<=0){
       ai.chargeCool=ai.enraged?5:8; ai.stam-=15;
-      boss._chargeT=0; boss._chargeHit=false;
-      boss.imp=add(boss.imp,scl(nrm(dvec),9.5));
-      boss.act='dash'; boss.actT=0;
-      log('It charges!');
+      boss._chargeHit=false;
+      boss.act='charge'; boss.actT=0; boss._struck=false;
+      boss.actProf={wind:ai.enraged?.35:.55,active:.75,imp:11,
+        aim:()=>add(player.leader,scl(player.vel,.35))};
+      log('It paws the ground…');
     }
   }
 }
@@ -1333,7 +1427,7 @@ function hudTick(){
     hf.style.width=Math.max(0,player.hp/player.maxHp*100)+'%';
     if(hf.classList)hf.classList.toggle('low',player.hp<player.maxHp*.35);
   }
-  const sf=$('stamfill'); if(sf&&sf.style)sf.style.width=((1-dashCool/.9)*100)+'%';
+  const sf=$('stamfill'); if(sf&&sf.style)sf.style.width=((1-dashCool/.8)*100)+'%';
   const ft=$('faints'); if(ft)ft.textContent='●'.repeat(Math.max(0,3-game.faints))+'○'.repeat(Math.min(3,game.faints));
 }
 
@@ -1353,6 +1447,7 @@ let last=performance.now();
 function frame(now){
   requestAnimationFrame(frame);
   let dt=Math.max(Math.min((now-last)/1000,1/20),1e-4); last=now;
+  if(game.hitStop>0){game.hitStop=Math.max(0,game.hitStop-dt);dt*=.12;} // impact freeze
   emaMs=emaMs*.95+(now-(frame._p||now))*.05; frame._p=now;
   if(emaMs>22&&quality>.5){quality=Math.max(.5,quality*.92);resize();}
   else if(emaMs<11&&quality<Math.min(devicePixelRatio||1,1.5)){quality=Math.min(quality*1.03,Math.min(devicePixelRatio||1,1.5));resize();}
