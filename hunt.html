@@ -40,6 +40,9 @@
   #stamfill{height:100%;width:100%;background:#e8b04e;transition:width .12s;}
   #faints{margin-top:6px;font-size:11px;letter-spacing:.3em;color:#d96f4e;}
   #potions{margin-top:4px;font-size:11px;letter-spacing:.3em;color:#8ed18b;}
+  #parts{margin-top:8px;font-size:10px;letter-spacing:.08em;color:var(--ink-dim);line-height:1.7;
+    white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.45);}
+  #parts b{color:var(--amber);font-weight:600;}
   #hpfill.heal{background:linear-gradient(90deg,#72c878,#b4e887);}
   #huntlog{position:fixed;left:20px;bottom:52px;display:flex;flex-direction:column-reverse;gap:4px;}
   #huntlog div{font-size:11px;letter-spacing:.08em;color:var(--ink);
@@ -85,6 +88,7 @@
     <div id="stambar"><div id="stamfill"></div></div>
     <div id="faints">●●●</div>
     <div id="potions">○○○</div>
+    <div id="parts"></div>
   </div>
   <div id="huntlog"></div>
   <div id="prompt"></div>
@@ -273,7 +277,7 @@ function makeCreature(name,opts={}){
     hp:opts.hp||100, maxHp:opts.hp||100, stam:opts.stam??0, stamMax:opts.stamMax??0,
     stamRegenT:0, dead:false,
     deadT:0, deathSide:1, deathBreath:0, lastHitDir:null,
-    iFrames:0, moveDir:V(), limpLeg:-1,
+    iFrames:0, moveDir:V(), limpLeg:-1, crestBroken:false,
     jawTip:V(1,0,0), headPos:V(1,.5,0), bladeA:V(), bladeB:V(),
     _sweepTag:null, _sweepN:0, _hitPoint:null, segs:null,
   };
@@ -733,29 +737,32 @@ function buildSkeleton(cr,dt){
   // species landmark: exaggerated head tell (mat 3/5 pops vs skin; stone-hide = chunkier)
   if(P.lmHead){
     const th=1+(st.density>1?.28:0), hr=P.headR*rs;
+    // crest break: horns shear to short blunt stubs — the snapped face reads wide
+    const bk=st.crestBroken?1:0, ext=bk?.32:1;
     if(P.lmHead==='crown'){
       for(const s of[1,-1]){
         const b0=add(head,add(scl(hf,P.headLen*.04),add(scl(hs,s*hr*.55),scl(hu,hr*1.05))));
-        S(b0,add(b0,add(scl(hf,-.06*rs),add(scl(hs,s*.10*rs),scl(hu,.34*rs*th)))),
-          hr*.32*th,.012,3,soft,'head');
+        S(b0,add(b0,scl(add(scl(hf,-.06*rs),add(scl(hs,s*.10*rs),scl(hu,.34*rs*th))),ext)),
+          hr*.32*th,bk?hr*.16:.012,3,soft,'head');
         const b1=add(head,add(scl(hf,-P.headLen*.08),add(scl(hs,s*hr*.48),scl(hu,hr*.88))));
-        S(b1,add(b1,add(scl(hf,-.10*rs),add(scl(hs,s*.06*rs),scl(hu,.22*rs*th)))),
-          hr*.22*th,.008,5,soft,'head');
+        S(b1,add(b1,scl(add(scl(hf,-.10*rs),add(scl(hs,s*.06*rs),scl(hu,.22*rs*th))),ext)),
+          hr*.22*th,bk?hr*.11:.008,5,soft,'head');
       } // 4 caps
     }else if(P.lmHead==='fan'){
       for(let i=0;i<5;i++){
         const a=(i-2)*.28, ca=Math.cos(a), sa=Math.sin(a);
         const b0=add(head,add(scl(hf,-P.headLen*.06),add(scl(hs,sa*hr*.35),scl(hu,hr*.92))));
-        S(b0,add(b0,add(scl(hf,-.04*rs),add(scl(hs,sa*.14*rs),scl(hu,.28*rs*th*ca)))),
-          hr*.18*th,.006,i&1?5:3,soft,'head');
+        S(b0,add(b0,scl(add(scl(hf,-.04*rs),add(scl(hs,sa*.14*rs),scl(hu,.28*rs*th*ca))),ext)),
+          hr*.18*th,bk?hr*.09:.006,i&1?5:3,soft,'head');
       } // 5 caps
-    }else{ // heavy brow ridge — bar + two sockets
+    }else{ // heavy brow ridge — bar + two sockets; break drops the bar, chips the sockets
       for(const s of[1,-1]){
         const b=add(head,add(scl(hf,P.headLen*.18),add(scl(hs,s*hr*.62),scl(hu,hr*.72))));
-        S(b,add(b,add(scl(hs,s*-hr*.55),scl(hu,hr*.08))),hr*.34*th,hr*.28*th,3,soft,'head');
+        S(b,add(b,scl(add(scl(hs,s*-hr*.55),scl(hu,hr*.08)),ext)),
+          hr*.34*th*(bk?.7:1),hr*.28*th*(bk?.5:1),3,soft,'head');
       }
       const br=add(head,add(scl(hf,P.headLen*.16),scl(hu,hr*.78)));
-      S(br,add(br,scl(hf,P.headLen*.14)),hr*.30*th,hr*.16*th,5,soft,'head');
+      if(!bk)S(br,add(br,scl(hf,P.headLen*.14)),hr*.30*th,hr*.16*th,5,soft,'head');
     } // 3 caps
   }
 
@@ -844,20 +851,23 @@ function buildSkeleton(cr,dt){
 
   // Phase IV legs — one Universal Limb Class, different pole vectors
   for(const leg of st.legs){
-    const lgTag='leg'+st.legs.indexOf(leg);
+    const lgI=st.legs.indexOf(leg), lgTag='leg'+lgI;
+    const broken=lgI===st.limpLeg; // buckled break: bowed stance, thin shank, bone spur
     const bodyR=(P.chestR+(P.hipR-P.chestR)*leg.u)*rs;
     const spine=mix(st.chest,st.hip,leg.u);
     const lu=P.lu*ls, ll=P.ll*ls, lr=P.legR*rs;
+    let kneeJ=null;
     if(P.mode==='zigzag'){
       // the Mammal Problem: solve hip→ankle two-bone, hang the metatarsal below —
       // the push/pull that fools a 2-bone solver into a 3-bone silhouette
       const hipJ=add(spine,add(scl(bs,leg.s*bodyR*.55),scl(bu,-bodyR*.15)));
       const fs=P.fs*ls;
       const ankleT=add(leg.foot,add(V(0,fs*.85,0),scl(fw,-fs*.35)));
-      const pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
+      let pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
+      if(broken){pole=nrm(add(pole,scl(bs,leg.s*1.6)));ankleT[1]=Math.max(ankleT[1]-fs*.45,fs*.25);}
       const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
       S(hipJ,knee,lr*1.5,lr,2,soft,lgTag);
-      S(knee,ank,lr,lr*.8,2,soft,lgTag);
+      S(knee,ank,lr*(broken?.78:1),lr*.8*(broken?.7:1),2,soft,lgTag);
       S(ank,add(leg.foot,scl(fw,.09)),lr*.8,lr*.6,2,soft,lgTag);
       if(P.muscle){ // thigh / shoulder mass + knee knuckle
         const mR=bodyR*(leg.u>.5?.85:.62);
@@ -872,21 +882,32 @@ function buildSkeleton(cr,dt){
           S(cb,add(cb,add(scl(fw,lr*2.6),V(0,-lr*.2,0))),lr*.38,.004,7,hard,lgTag);
         }
       }
+      kneeJ=knee;
     }else{
       // posture morphs the joint: sprawled side-poles → upright forward-poles
       const out=(P.mode==='spider'?.95:.9)-.4*st.posture;
       const hipJ=add(spine,add(scl(bs,leg.s*bodyR*out),scl(bu,-bodyR*(.05+.25*st.posture))));
-      const pole=nrm(mix(add(scl(bu,.7),scl(bs,leg.s)),
-                         add(scl(bu,1.3),scl(fw,.4)),st.posture));
+      let pole=nrm(mix(add(scl(bu,.7),scl(bs,leg.s)),
+                       add(scl(bu,1.3),scl(fw,.4)),st.posture));
+      if(broken)pole=nrm(add(pole,scl(bs,leg.s*1.4)));
       const {knee,foot}=solve2(hipJ,leg.foot,lu,ll,pole);
       S(hipJ,knee,lr*1.4,lr,2,soft,lgTag);
-      S(knee,foot,lr,lr*.65,2,soft,lgTag);
+      S(knee,foot,lr*(broken?.78:1),lr*.65*(broken?.7:1),2,soft,lgTag);
+      kneeJ=knee;
+    }
+    if(broken){ // compound-fracture read: swollen joint + a pale spur of bone
+      S(kneeJ,kneeJ,lr*1.4,lr*1.4,1,soft,lgTag);
+      const sp0=add(kneeJ,scl(bs,leg.s*lr*.5));
+      S(sp0,add(sp0,add(scl(bs,leg.s*lr*1.7),V(0,lr*1.2,0))),lr*.38,.005,5,hard,lgTag);
     }
   }
 
   // tail — a follow-chain wobble tower
   if(P.tailN){
     const segL=P.tailLen/P.tailN;
+    // severed: taper against the pre-sever count — the cut end stays blunt,
+    // an amputation, not a smaller intact tail
+    const NT=P.tailN0||P.tailN;
     let prev=st.hip;
     for(let i=0;i<P.tailN;i++){
       const sw=Math.sin(st.phase*Math.PI*2-i*.55)*(.16*st.speedN+.04)
@@ -903,8 +924,8 @@ function buildSkeleton(cr,dt){
       }
       st.tail[i]=add(prev,scl(dir,segL));
       // tail-root seam pinch (i==0): thinner hip↔tail waist so the root reads
-      let r1=(P.hipR*.7)*(1-i/P.tailN)*rs+.015;
-      let r2=(P.hipR*.7)*(1-(i+1)/P.tailN)*rs+.012;
+      let r1=(P.hipR*.7)*(1-i/NT)*rs+.015;
+      let r2=(P.hipR*.7)*(1-(i+1)/NT)*rs+.012;
       if(i===0){r1=P.hipR*rs*.40;r2=Math.min(r2,P.hipR*rs*.55);}
       S(prev,st.tail[i],r1,r2,1,soft,'tail');
       prev=st.tail[i];
@@ -976,7 +997,7 @@ function buildSkeleton(cr,dt){
     }
     for(let i=0;i<3;i++){ // plates continue down the tail, shrinking
       const tp=st.tail[i*2]; if(!tp)break;
-      const r=(P.hipR*.6)*(1-(i*2)/Math.max(P.tailN,1))*rs+.02;
+      const r=(P.hipR*.6)*(1-(i*2)/Math.max(P.tailN0||P.tailN,1))*rs+.02;
       S(add(tp,scl(bu,r*.7)),add(tp,scl(bu,r*1.35*pTh)),r*.5*pTh,.02,3,soft,'tail');
     }
   }
@@ -1078,7 +1099,7 @@ uniform vec4 uGrpB[3];         // seg start, nSoft, nHard, smin k
 uniform vec3 uPal[12];         // 0-5 player pigment · 6-11 boss pigment
 uniform vec4 uSpine[4];        // [chest.xyz,skinFreq][hip.xyz,0] per creature
 uniform vec4 uLook[2];         // [gaze.xyz,0] per creature · living eyes
-uniform vec4 uFoot[8],uHurt;   // x,z,time,size footprints · tail/leg damage · z=stone-hide
+uniform vec4 uFoot[8],uHurt;   // x,z,time,size footprints · x tail y legs z stone-hide w head
 uniform vec4 uHitFlash;        // x=zone(0none 1head 2body 3tail 4leg) y=age0..1 z=crit w=bounce/tink
 uniform float uPix;            // 0=off · N=posterize levels (pixel mode)
 
@@ -1289,6 +1310,7 @@ void main(){
           float tailZone=smoothstep(1.08,1.30,ut);
           float stump=smoothstep(.98,1.06,ut)*(1.-smoothstep(1.30,1.42,ut));
           hurt=max(hurt,uHurt.x*max(tailZone,stump*step(.98,uHurt.x)));
+          hurt=max(hurt,uHurt.w*smoothstep(.02,-.38,ut)); // crest pool: head scars build to the break
         }
         if(mi==2)hurt=max(hurt,uHurt.y*smoothstep(.62,.14,p.y/max(spA.y,.3)));
         float blotch=smoothstep(.48,.72,mot);
@@ -1780,6 +1802,8 @@ function genSpecies(){
 
 const SPECIES=genSpecies();
 const BN=SPECIES.short;                        // "the Vulkhan" in log lines
+const CREST_LABEL={crown:'HORNS',fan:'CREST',brow:'BROW'}[SPECIES.lmHead];
+const CREST_LOOT={crown:'HORN',fan:'CREST SHARD',brow:'SKULL PLATE'}[SPECIES.lmHead];
 const player=makeCreature('hunter',{isPlayer:true,pos:V(0,0,9),hp:100,stam:100,stamMax:100,
   pal:'ember',scale:.9,speed:1.25});
 const boss=makeCreature(SPECIES.base,{pos:V(0,0,-3),hp:SPECIES.hp,pal:SPECIES.pal,
@@ -1814,9 +1838,10 @@ const AIP={                                    // species-derived combat profile
 const game={
   over:false,failed:false,faints:0,potions:3,potion:null,loot:[],carveNodes:[],props:null,
   telegraphing:false,
-  severed:false,tiredHurt:0,rage:0,time:0,hitStop:0,
+  severed:false,crestBroken:false,tiredHurt:0,rage:0,time:0,hitStop:0,
   parts:{tail:Math.round(100*SPECIES.scale*Math.max(SPECIES.tailMul,.6)),
-         legs:Math.round(120*SPECIES.scale)},
+         legs:Math.round(120*SPECIES.scale),
+         head:Math.round(160*SPECIES.scale)},
   ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,swoopCool:9,swooping:false,
       swoopT:0,dropSlam:false,stam:100,enraged:false,fled:false,tiredT:0,
       orbitDir:1,pounceCool:3,hopCool:2,moveMode:'close'},
@@ -1826,7 +1851,7 @@ const game={
   tiredSoftLog:false, // one-shot log when plated zones soften while tired
 };
 game.foot.fill(-99);
-game.partMax={tail:game.parts.tail,legs:game.parts.legs};
+game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head};
 
 function footSize(cr,mul=1){
   return Math.max(.11,cr.P.legR*cr.radScale*cr.scale*(cr.isPlayer?4:5)*mul);
@@ -1922,6 +1947,8 @@ function hzResolve(tag,pos){
     const midY=boss.chest[1]+ab[1]*t;
     if(pos[1]<midY&&hz.belly!==hz.body){zone='belly';mult=hz.belly;}
   }
+  // crest break: the exposed skull stays soft for the rest of the hunt
+  if(zone==='head'&&game.crestBroken)mult*=1.3;
   // exhausted opening: plated/hard zones soften to floor 0.9
   if(game.ai.state==='tired'&&mult<.9){
     if(!game.tiredSoftLog){game.tiredSoftLog=true;log('Hide softens — hit it while it gasps!',true);}
@@ -1945,6 +1972,7 @@ function hitBoss(amt,tag,pos){
   boss.hp-=dmg;
   if(!bounce)game.ai.stam-=3; // plated bounce: no stamina drain
   if(tag==='tail'&&!game.severed){game.parts.tail-=dmg;if(game.parts.tail<=0){partBreak=true;severTail();}}
+  if(tag==='head'&&!game.crestBroken){game.parts.head-=dmg;if(game.parts.head<=0){partBreak=true;breakCrest();}}
   if(tag&&tag.indexOf('leg')===0&&game.parts.legs>0){
     game.parts.legs-=dmg;
     if(game.parts.legs<=0){
@@ -2072,28 +2100,77 @@ function combat(dt){
   }
 }
 
-// ---------- part break: sever the tail, leave it in the world ----------
+// ---------- part breaks: severed/shattered pieces drop into the world ----------
+// all drops share the one prop capsule group — merge, don't replace
+function addProp(p){
+  if(!game.props){game.props=p;return;}
+  game.props.soft.push(...p.soft); game.props.hard.push(...p.hard);
+  game.props.center=mix(game.props.center,p.center,.5);
+}
 function severTail(){
   game.severed=true; game.parts.tail=0;
-  const N0=boss.tail.length;
+  const N0=boss.tail.length, rsB=boss.radScale;
   const chain=boss.tail.slice(2).map(p=>[...p]);
   const drop=p=>[p[0],Math.max(.06,p[1]*.25),p[2]];
-  const soft=[];
+  const soft=[], hard=[];
   let prev=drop(chain[0]);
   for(let i=1;i<chain.length;i++){
     const cur=drop(chain[i]);
-    const r1=(boss.P.hipR*.7)*(1-(i+1)/N0)+.02, r2=(boss.P.hipR*.7)*(1-(i+2)/N0)+.015;
+    const r1=(boss.P.hipR*.7)*(1-(i+1)/N0)*rsB+.02, r2=(boss.P.hipR*.7)*(1-(i+2)/N0)*rsB+.015;
     soft.push([prev,cur,r1,r2,1,'prop']);
     prev=cur;
   }
+  // the tip weapon leaves with the piece — club bulb / spike fan / pale band
+  const pt2=drop(chain[Math.max(chain.length-2,0)]);
+  const td=nrm(add(sub(prev,pt2),V(0,1e-4,0)));
+  if(boss.P.tailClub){
+    const bulbR=boss.P.hipR*rsB*.48*1.22*(boss.density>1?1.15:1);
+    const bulb=[prev[0]+td[0]*bulbR*.7,Math.max(.06,bulbR*.75),prev[2]+td[2]*bulbR*.7];
+    soft.push([prev,bulb,bulbR*.7,bulbR,1,'prop']);
+    soft.push([bulb,add(bulb,V(0,1e-4,0)),bulbR*1.05,bulbR*1.05,1,'prop']);
+    for(let k=0;k<4;k++){
+      const a=k/4*Math.PI*2+.6;
+      const d=nrm([Math.cos(a),.45,Math.sin(a)]);
+      const b=add(bulb,scl(d,bulbR*.55));
+      hard.push([b,add(b,scl(d,bulbR*1.1)),bulbR*.36,.004,3,'prop']);
+    }
+  }else if(boss.P.tailSpikes){
+    const tr=boss.P.hipR*rsB*.12+.03;
+    for(const s of[1,-1]){
+      const b=[prev[0],.05,prev[2]];
+      const d=nrm([td[0]*.42-td[2]*s*.72,.5,td[2]*.42+td[0]*s*.72]);
+      hard.push([b,add(b,scl(d,.075+tr*.7)),tr*.72,.004,3,'prop']);
+    }
+  }else if(boss.P.lmTail==='band'){
+    const tr=boss.P.hipR*rsB*.14+.03;
+    soft.push([mix(pt2,prev,.4),mix(pt2,prev,.7),tr*1.15,tr*1.15,5,'prop']);
+  }
   const mid=drop(chain[Math.floor(chain.length/2)]);
-  game.props={soft,
-    hard:[[add(mid,V(0,.18,0)),add(mid,V(0,.181,0)),.07,.07,5,'prop']], // carve beacon
-    center:mid,k:.06};
+  hard.push([add(mid,V(0,.18,0)),add(mid,V(0,.181,0)),.07,.07,5,'prop']); // carve beacon
+  addProp({soft,hard,center:mid,k:.06});
   game.carveNodes.push({pos:mid,uses:1,loot:[BN.toUpperCase()+' TAIL']});
+  boss.P.tailN0=N0; // stump taper stays cut against the full tail
   boss.P.tailLen*=3/boss.P.tailN; boss.P.tailN=3; boss.tail.length=3;
+  boss.P.tailClub=false; boss.P.tailSpikes=false; boss.P.lmTail=null;
   dmgNum(mid,'SEVERED!','big'); sfx.sever(); cam.shake=Math.max(cam.shake,.5);
   log('Tail severed! Carve it for materials.',true);
+}
+function breakCrest(){
+  game.crestBroken=true; game.parts.head=0; boss.crestBroken=true;
+  // shards land beside the head, clear of the stomping feet
+  const side=nrm(cross(V(0,1,0),boss.fw));
+  const hr=Math.max(boss.P.headR*boss.radScale*boss.scale,.12);
+  const gp=add([boss.headPos[0],0,boss.headPos[2]],scl(side,hr*2.2+.5));
+  addProp({soft:[
+      [[gp[0]-hr*.9,.05,gp[2]],[gp[0]+hr*.8,.05+hr*.9,gp[2]+hr*.4],hr*.42,.012,3,'prop'],
+      [[gp[0]+hr*.4,.04,gp[2]-hr*.9],[gp[0]+hr*1.5,.04+hr*.5,gp[2]-hr*1.3],hr*.28,.010,5,'prop'],
+    ],
+    hard:[[add(gp,V(0,.18,0)),add(gp,V(0,.181,0)),.07,.07,5,'prop']], // carve beacon
+    center:[...gp],k:.05});
+  game.carveNodes.push({pos:[...gp],uses:1,loot:[BN.toUpperCase()+' '+CREST_LOOT]});
+  dmgNum(boss.headPos,'BROKEN!','big'); sfx.sever(); cam.shake=Math.max(cam.shake,.5);
+  log('Its '+CREST_LABEL.toLowerCase()+(CREST_LABEL==='HORNS'?' shatter':' shatters')
+      +' — the head is exposed!',true);
 }
 
 // ---------- boss AI: patrol → hunt → enrage → tired → flee → dead ----------
@@ -2362,6 +2439,18 @@ function hudTick(){
   const ft=$('faints'); if(ft)ft.textContent='●'.repeat(Math.max(0,3-game.faints))+'○'.repeat(Math.min(3,game.faints));
   const pt=$('potions'); if(pt)pt.textContent='●'.repeat(Math.max(0,game.potions))+
     '○'.repeat(Math.max(0,3-game.potions));
+  // part-break pips: each breakable zone fills toward its break, ✕ when gone
+  const pe=$('parts');
+  if(pe){
+    const bar=(left,max)=>{const n=Math.round(clamp(1-left/max,0,1)*4);
+      return '▓'.repeat(n)+'░'.repeat(4-n);};
+    const row=[game.crestBroken?'<b>'+CREST_LABEL+' ✕</b>'
+                               :CREST_LABEL+' '+bar(game.parts.head,game.partMax.head)];
+    if(HAS_TAIL)row.push(game.severed?'<b>TAIL ✕</b>'
+                                     :'TAIL '+bar(game.parts.tail,game.partMax.tail));
+    row.push(boss.limpLeg>=0?'<b>LEGS ✕</b>':'LEGS '+bar(game.parts.legs,game.partMax.legs));
+    pe.innerHTML=row.join(' · ');
+  }
 }
 
 // ---------- resize + adaptive quality ----------
@@ -2460,7 +2549,8 @@ function frame(now){
   const tailHurt=game.severed?1:clamp(1-game.parts.tail/game.partMax.tail,0,1);
   const legHurt=clamp(1-game.parts.legs/game.partMax.legs,0,1);
   const stoneH=SPECIES.density>1?clamp((SPECIES.density-1)*.9,0,1):0;
-  gl.uniform4f(U.uHurt,tailHurt,legHurt,stoneH,0);
+  const headHurt=game.crestBroken?1:clamp(1-game.parts.head/game.partMax.head,0,1);
+  gl.uniform4f(U.uHurt,tailHurt,legHurt,stoneH,headHurt);
   // hit-part flash: zone + age over ~0.18s (1 head · 2 body · 3 tail · 4 leg) · w=bounce
   let hfZ=0,hfA=1,hfC=0,hfB=0;
   if(game.lastHit){

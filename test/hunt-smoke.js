@@ -211,14 +211,66 @@ vm.runInContext(`
 
   // 5. tail sever (part pool drained) — only species with tails
   if (boss.P.tailN > 0) {
+    const tailNPre = boss.P.tailN;
+    const hadClub = !!boss.P.tailClub, hadSpikes = !!boss.P.tailSpikes;
     game.parts.tail = 5;
     hitBoss(10, 'tail', boss.tail[2]);
     if (!game.severed) throw new Error('tail did not sever');
     if (boss.P.tailN !== 3) throw new Error('tail not shortened: ' + boss.P.tailN);
     if (!game.props || !game.props.soft.length) throw new Error('no severed-tail prop');
     if (game.carveNodes.length < 1) throw new Error('no tail carve node');
+    // amputation, not a smaller tail: blunt cut face, tip weapon gone with the piece
+    if (boss.P.tailN0 !== tailNPre) throw new Error('tailN0 not recorded: ' + boss.P.tailN0);
+    if (boss.P.tailClub || boss.P.tailSpikes || boss.P.lmTail)
+      throw new Error('stump kept its tip weapon');
+    buildSkeleton(boss, 1 / 60);
+    const chainCaps = boss.segs.soft.filter(s => s[5] === 'tail' && s[4] === 1);
+    const endR = chainCaps[chainCaps.length - 1][3];
+    const bluntR = (boss.P.hipR * .7) * (1 - boss.P.tailN / boss.P.tailN0) * boss.radScale + .012;
+    if (Math.abs(endR - bluntR) > 1e-6)
+      throw new Error('stump end not blunt: r=' + endR + ' expected ' + bluntR);
+    if (hadClub) {
+      const bulb = game.props.soft.some(s => s[2] > boss.P.hipR * boss.radScale * .4);
+      if (!bulb) throw new Error('club bulb did not drop with the severed tail');
+    }
+    if (hadSpikes && !game.props.hard.some(s => s[4] === 3))
+      throw new Error('spikes did not drop with the severed tail');
     __drive(60); __checkFinite('severed');
   } else console.log('severed | (tailless species — skipped)');
+
+  // 5b. crest break: head pool drained → stubs, shard props, exposed-skull bonus
+  if (game.crestBroken) throw new Error('crest broke during ordinary combat');
+  const hzHead0 = hzResolve('head', boss.headPos).mult;
+  const propSoft0 = game.props ? game.props.soft.length : 0;
+  const nodes0 = game.carveNodes.length;
+  game.parts.head = 5;
+  hitBoss(10, 'head', boss.headPos);
+  if (!game.crestBroken || !boss.crestBroken) throw new Error('crest did not break');
+  if (game.parts.head !== 0) throw new Error('head pool not zeroed: ' + game.parts.head);
+  if (!game.props || game.props.soft.length < propSoft0 + 2)
+    throw new Error('crest shards not dropped as props');
+  if (game.carveNodes.length !== nodes0 + 1) throw new Error('no crest carve node');
+  const hzHead1 = hzResolve('head', boss.headPos).mult;
+  if (!(hzHead1 > hzHead0))
+    throw new Error('broken crest did not expose the head: ' + hzHead0 + '→' + hzHead1);
+  buildSkeleton(boss, 1 / 60);
+  const stubCaps = [...boss.segs.soft, ...boss.segs.hard]
+    .filter(s => s[5] === 'head' && (s[4] === 3 || s[4] === 5));
+  if (stubCaps.length < 1) throw new Error('broken crest lost its stub capsules');
+  __drive(30); __checkFinite('crest-break');
+
+  // 5c. leg break: pool drained → limp, slowdown, visible fracture (bone spur)
+  if (boss.limpLeg < 0) {
+    game.parts.legs = 5;
+    const speed0 = boss.P.speed;
+    hitBoss(10, 'leg0', boss.chest);
+    if (boss.limpLeg !== 0) throw new Error('leg did not break: ' + boss.limpLeg);
+    if (!(boss.P.speed < speed0)) throw new Error('leg break did not slow the boss');
+  }
+  buildSkeleton(boss, 1 / 60);
+  const spurs = boss.segs.hard.filter(s => s[5] === 'leg' + boss.limpLeg && s[4] === 5);
+  if (spurs.length < 1) throw new Error('broken leg has no bone-spur capsule');
+  __drive(30); __checkFinite('leg-break');
 
   // 6. boss slam event sanity (enraged move) — force it
   game.ai.slamCool = -1; game.ai.atkCool = 9; game.ai.chargeCool = 9;
@@ -266,12 +318,17 @@ vm.runInContext(`
   const headLM = all.filter(s => s[5] === 'head' && (s[4] === 3 || s[4] === 5));
   if (headLM.length < 1)
     throw new Error('no head landmark capsules (mat 3/5) for lmHead=' + SPECIES.lmHead);
+  // a severed stump must have LOST its tip landmark — it left with the piece
   if (SPECIES.lmTail === 'band') {
     const bands = all.filter(s => s[5] === 'tail' && s[4] === 5);
-    if (bands.length < 1) throw new Error('lmTail=band emitted no accent band capsules');
+    if (game.severed) {
+      if (bands.length) throw new Error('severed stump kept its band accents');
+    } else if (bands.length < 1) throw new Error('lmTail=band emitted no accent band capsules');
   }
   if (SPECIES.lmTail === 'club') {
-    if (!boss.P.tailClub) throw new Error('lmTail=club did not set tailClub');
+    if (game.severed) {
+      if (boss.P.tailClub) throw new Error('severed stump kept tailClub');
+    } else if (!boss.P.tailClub) throw new Error('lmTail=club did not set tailClub');
   }
   if (SPECIES.lmBack && !boss.P.plates)
     throw new Error('lmBack did not enable plates');

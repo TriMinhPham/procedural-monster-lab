@@ -42,8 +42,13 @@ briefs the tells.
   matter — plated hides *tink* and deflect, soft bellies take bonus, an
   exhausted monster's armor softens. Boss windups got slower and each attack
   family has its own synthesized tell tone: fights are learnable, then fair.
-- **Part breaks**: drain the tail pool and it detaches into the world as a
-  carveable prop; wound the legs and the gait stepper limps.
+- **Part breaks**: every breakable zone has a damage pip bar on the HUD, so
+  focused hits visibly build toward the break. Drain the tail pool and it
+  detaches into the world as a carveable prop; shatter the **head crest** and
+  the landmark snaps to stubs, shards drop as a second carveable prop, and the
+  exposed skull takes +30% for the rest of the hunt; break a leg and the
+  monster limps at 72% speed on a visibly buckled leg — bowed stance, swollen
+  knee, a pale spur of bone.
 - **Boss AI** rides the dynamics system: patrol → roar/aggro → bite, charge,
   jump-slam → **enrage** at 50% HP (f up, ζ down, eyes glow) → exhausted rest
   (free damage window) → flees at 20% to sleep it off → carve the corpse.
