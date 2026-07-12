@@ -13,14 +13,43 @@ smoothly-blended capsules.
 |---|---|
 | ![rex](docs/rex.png) | ![wyvern](docs/wyvern.png) |
 
-## Hunt mode (vertical slice)
+## Hunt mode — THE HUNT SAGA
 
-Open `hunt.html` — a Monster Hunter-style quest built on the same engine.
-Every hunt generates a **new species** (`?seed=N` to pin one): archetype ×
-scale, bulk, legs, wings, tail, tempo, palette, hitzones, landmarks, and a
-name — and the body plan is the moveset (wings dive-bomb, long tails sweep,
-tailless bruisers slam, twitchy species telegraph less). The quest banner
-briefs the tells.
+Open `hunt.html` — a full Monster Hunter-style campaign built on the same
+engine. Every hunt generates a **new species** (`?seed=N` to pin one):
+archetype × scale, bulk, legs, wings, tail, tempo, palette, hitzones,
+landmarks, and a name — and the body plan is the moveset (wings dive-bomb,
+long tails sweep, tailless bruisers slam, twitchy species telegraph less).
+The quest banner briefs the tells.
+
+| The quest board | Fable, the Last Ember |
+|---|---|
+| ![board](docs/hunt-board.png) | ![fable](docs/hunt-fable.png) |
+
+- **The saga**: a world seed rolls five ranked hunts — each pinned to a biome,
+  each species named on the board before you take the contract — plus a sealed
+  finale: **FABLE, THE LAST EMBER**, a crown-crested, club-tailed flying wyvern
+  in crimson and gold, unlocked by three clears (`?quest=fable` to peek).
+  Progress, materials, and steel persist in localStorage; NEW WORLD rerolls
+  the quests, FREE HUNT rolls a one-off species.
+- **The forge**: carves and part-breaks bank materials (scale · fang · plate ·
+  hide · relic). Five sword tiers (LAB BLADE → FABLE'S OATH, damage ×1→×2.2 —
+  the blade visibly grows, gains edge accents and guard prongs, and longer
+  steel is real reach) and four armor tiers (up to −38% damage taken, plate by
+  visible plate).
+- **Five biomes** recolor the world — ground, sky, fog, rocks, and edge-of-arena
+  scenery (dead trees, reed beds, ice shards, ember spires), all raymarched
+  capsules like everything else. `?biome=crater|dunes|marsh|tundra|ember`.
+
+| Pale Tundra | Mireback Marsh | Ember Waste |
+|---|---|---|
+| ![tundra](docs/hunt-tundra.png) | ![marsh](docs/hunt-marsh.png) | ![ember](docs/hunt-ember.png) |
+
+- **Procedural music**: a WebAudio director with zero samples. A fixed
+  guild-hall title theme; then each species' **leitmotif is derived from its
+  seed** and arranged live — sparse over prowling, full taiko + lead in
+  battle, shifted dark and fast at enrage, with victory and defeat stings.
+  Fable's fixed seed means Fable has a theme of its own.
 
 - **WASD** move · **click / J** attack — 3-hit sword combo · **shift** dash
   (i-frames) · **space** jump · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
@@ -79,7 +108,14 @@ briefs the tells.
   leg turnover follow speed.
 - Zero keyframes and zero assets throughout — even the sounds are synthesized.
 
-Smoke test: `node test/hunt-smoke.js` drives the whole quest headless.
+Smoke test: `node test/hunt-smoke.js` drives the whole quest headless — the
+fight, the breaks, the carve, plus scenery and saga self-tests (quest scaling,
+Fable's identity, banking, forge and armor math). `test/music-test.js` drives
+the music director against a fake AudioContext; `test/forge-visual-test.js`
+asserts each weapon/armor tier stays finite and in the capsule budget.
+
+*Farewell build — led by Claude Fable 5, with GPT-5.6 and Grok 4.5 as
+executor lanes.*
 
 ## Run it (the lab)
 

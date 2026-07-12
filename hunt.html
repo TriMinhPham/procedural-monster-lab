@@ -284,6 +284,7 @@ const BIOMES={
     name:'SCARRED CRATER', style:0,
     gndA:[.44,.42,.345], gndB:[.38,.36,.29], gndD:[.62,.54,.40],
     skyZ:[.16,.19,.27], skyH:[.78,.60,.45], sun:[1.,.85,.62],
+    sunDir:[-.45,.62,-.38], /*BIOME*/
     fogM:1.0, fogB:0.0, fogT:[.78,.60,.45],
     rock:[.36,.32,.28], rockN:3,
     fixedRocks:[[3.6,-4.4,1.15],[-5.2,2.6,1.4],[1.4,5.6,.95]]
@@ -292,6 +293,7 @@ const BIOMES={
     name:'SUNGOLD DUNES', style:1,
     gndA:[.72,.58,.34], gndB:[.86,.70,.42], gndD:[.92,.78,.52],
     skyZ:[.35,.55,.78], skyH:[.97,.82,.55], sun:[1.,.92,.70],
+    sunDir:[-.3,.78,-.25], /*BIOME*/
     fogM:0.7, fogB:0.35, fogT:[.94,.80,.58],
     rock:[.55,.42,.28], rockN:4
   },
@@ -299,13 +301,15 @@ const BIOMES={
     name:'MIREBACK MARSH', style:2,
     gndA:[.28,.34,.24], gndB:[.18,.28,.22], gndD:[.32,.42,.30],
     skyZ:[.18,.24,.22], skyH:[.48,.58,.45], sun:[.90,.88,.70],
-    fogM:1.85, fogB:0.55, fogT:[.40,.50,.42],
+    sunDir:[-.6,.38,-.5], /*BIOME*/
+    fogM:1.45, fogB:0.48, fogT:[.40,.50,.42],
     rock:[.30,.28,.24], rockN:5
   },
   tundra:{
     name:'PALE TUNDRA', style:3,
     gndA:[.82,.86,.90], gndB:[.70,.78,.86], gndD:[.95,.97,1.0],
     skyZ:[.55,.68,.82], skyH:[.88,.90,.94], sun:[.95,.96,1.0],
+    sunDir:[-.7,.42,-.2], /*BIOME*/
     fogM:0.65, fogB:0.4, fogT:[.78,.86,.94],
     rock:[.55,.58,.62], rockN:3
   },
@@ -313,6 +317,7 @@ const BIOMES={
     name:'EMBER WASTE', style:4,
     gndA:[.18,.12,.10], gndB:[.28,.14,.08], gndD:[.95,.35,.08],
     skyZ:[.12,.08,.10], skyH:[.55,.22,.10], sun:[1.,.55,.28],
+    sunDir:[-.75,.24,-.35], /*BIOME*/
     fogM:0.8, fogB:0.35, fogT:[.28,.11,.06],
     rock:[.22,.14,.12], rockN:4
   }
@@ -1367,6 +1372,8 @@ const ROCKS_GLSL=ROCKS.map(r=>
   `d=min(d,length(p-vec3(${r[0].toFixed(2)},${(-r[2]*.35).toFixed(2)},${r[1].toFixed(2)}))-${r[2].toFixed(2)});`
 ).join('\n  ');
 const _bv=a=>`vec3(${a[0].toFixed(3)},${a[1].toFixed(3)},${a[2].toFixed(3)})`; /*BIOME*/
+// lower sun → softer longer penumbra (ember/marsh ~1.6×, dunes ~0.8×, rest 1.0)
+const _bSh=({crater:1,dunes:.8,marsh:1.6,tundra:1,ember:1.6})[BIOME_KEY]||1; /*BIOME*/
 const BIOME_GLSL=`const vec3 B_GND_A=${_bv(BIOME.gndA)};
 const vec3 B_GND_B=${_bv(BIOME.gndB)};
 const vec3 B_GND_D=${_bv(BIOME.gndD)};
@@ -1377,7 +1384,8 @@ const vec3 B_FOG_T=${_bv(BIOME.fogT)};
 const vec3 B_ROCK=${_bv(BIOME.rock)};
 const float B_FOG_M=${BIOME.fogM.toFixed(3)};
 const float B_FOG_B=${BIOME.fogB.toFixed(3)};
-const int B_STYLE=${BIOME.style|0};`; /*BIOME*/
+const int B_STYLE=${BIOME.style|0};
+const float B_SHADOW=${_bSh.toFixed(2)};`; /*BIOME*/
 
 const FS=`#version 300 es
 precision highp float;
@@ -1504,7 +1512,7 @@ float shadow(vec3 ro,vec3 rd){
   float res=1.,t=.03;
   for(int i=0;i<34;i++){
     float h=min(mapM(ro+rd*t),rockSDF(ro+rd*t));
-    res=min(res,9.*h/t);
+    res=min(res,9.*h/(t*B_SHADOW)); /*BIOME*/
     t+=clamp(h,.015,.25);
     if(res<.01||t>9.)break;
   }
@@ -1768,7 +1776,7 @@ const U={};
 for(const n of['uRes','uTime','uTanF','uMark','uRage','uCamPos','uSun','uMarkPos','uSlam','uFoot','uHurt',
   'uHitFlash','uCamRot','uA','uB','uGrpA','uGrpB','uPal','uSpine','uLook','uPix','uWing'])
   U[n]=gl.getUniformLocation(prog,n);
-const SUN=nrm(V(-.45,.62,-.38));
+const SUN=nrm(V(...BIOME.sunDir)); /*BIOME*/
 
 // ---------- camera: follows the hunter, Tab locks to the monster ----------
 const cam={az:.7,el:.40,dist:7.4,pos:V(0,3,12),
