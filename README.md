@@ -54,7 +54,11 @@ The quest banner briefs the tells.
 - **WASD** move · **click / J** attack — 3-hit sword combo · **shift** dash
   (i-frames) · **space** jump · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
   **M** mute · **P** pixel mode (or `?pixel=1`) — 180p retro render, posterized + dithered ·
-  3 faints = quest failed
+  **R / B** after the verdict — retry / back to the board · 3 faints = quest failed
+- **Touch & gamepad**: left-half touches raise a floating stick, right half
+  stays orbit/tap-attack, with a glass DASH·JUMP·POTION·CARVE cluster; on a
+  pad the sticks move/orbit, **A** attack · **B** dash · **X** jump ·
+  **Y** hold-potion · **RB** carve · **LB** lock-on
 - **You hunt as a hunter** — an armored capsule-knight (helmet, pauldrons, no
   face) built from the same limb class as the monsters: slash · backhand ·
   overhead heavy, the swings driven by arm IK, the blade swept as a 5-point
