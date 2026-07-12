@@ -2087,15 +2087,15 @@ const sfx={
   dull:()=>{tone(120,90,.055,'square',.12);noiseHit(.025,.08,500);},
   exhausted:()=>{tone(105,48,.32,'sine',.18);noiseHit(.22,.12,180);},
   potion:()=>{tone(520,760,.14,'sine',.18);setTimeout(()=>tone(760,1040,.16,'sine',.16),100);},
-  biteTell:()=>tone(125,48,.24,'sawtooth',.14),
+  biteTell:()=>tone(125*VPITCH,48*VPITCH,.24,'sawtooth',.14),
   chargeTell:()=>{noiseHit(.08,.14,180);setTimeout(()=>noiseHit(.12,.10,120),70);},
   swipeTell:()=>{noiseHit(.20,.12,2400);tone(760,180,.22,'triangle',.10);},
   pounceTell:()=>tone(230,920,.26,'sine',.14),
   tink:()=>tone(2100,900,.045,'sine',.22), // metallic bounce — short high sine, fast decay
-  bite:()=>{tone(220,60,.12,'square',.3);noiseHit(.06,.4,1200);},
-  roar:()=>{tone(95,36,.85,'sawtooth',.5);noiseHit(.8,.4,420);},
+  bite:()=>{tone(220*VPITCH,60*VPITCH,.12,'square',.3);noiseHit(.06,.4,1200*VPITCH);},
+  roar:()=>{tone(95*VPITCH,36*VPITCH,.85,'sawtooth',.5);noiseHit(.8,.4,420*VPITCH);},
   hurt:()=>tone(300,110,.2,'square',.35),
-  slam:()=>{tone(70,28,.32,'sine',.8);noiseHit(.26,.6,260);},
+  slam:()=>{tone(70*VPITCH,28*VPITCH,.32,'sine',.8);noiseHit(.26,.6,260*VPITCH);},
   sever:()=>{noiseHit(.3,.7,1500);tone(500,80,.25,'sawtooth',.28);},
   carve:()=>{tone(660,660,.09,'sine',.28);setTimeout(()=>tone(880,880,.12,'sine',.28),90);},
   win:()=>{tone(440,440,.14,'sine',.32);setTimeout(()=>tone(554,554,.14,'sine',.32),150);
@@ -2240,6 +2240,8 @@ if(QUEST){ /*SAGA — rank scales the rolled species; the finale is named*/
   }
 }
 const BN=SPECIES.short;                        // "the Vulkhan" in log lines
+// the voice follows the body: heavy, bulky species call deeper (≈0.78×–1.31×)
+const VPITCH=1/Math.sqrt(SPECIES.scale*SPECIES.bulk*.62); /*SAGA*/
 const CREST_LABEL={crown:'HORNS',fan:'CREST',brow:'BROW'}[SPECIES.lmHead];
 const CREST_LOOT={crown:'HORN',fan:'CREST SHARD',brow:'SKULL PLATE'}[SPECIES.lmHead];
 const player=makeCreature('hunter',{isPlayer:true,pos:V(0,0,9),hp:100,stam:100,stamMax:100,
