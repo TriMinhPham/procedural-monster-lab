@@ -472,3 +472,58 @@ vm.runInContext(`
 
   console.log('HUNT SMOKE OK');
 `, ctx, { filename: 'hunt-driver.js' });
+
+// SCENERY_FORCE self-test: re-run the page VM per biome and assert 1–16
+// finite mat-9 hard scenery caps (HIDEF is false in the WebGL stub).
+// const/let page bindings are not sandbox properties — read them via runInContext.
+{
+  const biomeKeys = ['crater', 'dunes', 'marsh', 'tundra', 'ember'];
+  const seed = 7;
+  for (const bk of biomeKeys) {
+    const sctx = {
+      console: { log() {}, warn() {}, error: console.error },
+      Math: seededMath, JSON, Float32Array, Map, Set, Proxy, Error, String,
+      __TEST_SEED: seed,
+      __TEST_BIOME: bk,
+      SCENERY_FORCE: true,
+      document: {
+        getElementById: id => (id === 'gl' ? canvas : makeEl()),
+        querySelectorAll: () => [],
+        createElement: () => makeEl(),
+      },
+      matchMedia: () => ({ matches: false }),
+      addEventListener() {},
+      innerWidth: 1200, innerHeight: 800, devicePixelRatio: 1,
+      performance: { now: () => 0 },
+      requestAnimationFrame: () => {},
+      __t: 0, __raf: null, __timers: [],
+    };
+    sctx.setTimeout = () => 0;
+    sctx.clearTimeout = () => {};
+    vm.createContext(sctx);
+    vm.runInContext(js, sctx, { filename: 'hunt-scenery-' + bk + '.js' });
+    const report = vm.runInContext(`({
+      key: BIOME_KEY,
+      n: SCENERY_N,
+      hardN: game.props && game.props.hard ? game.props.hard.length : 0,
+      hard: game.props && game.props.hard ? game.props.hard : [],
+    })`, sctx);
+    if (report.key !== bk)
+      throw new Error('scenery: __TEST_BIOME ignored, got ' + report.key + ' want ' + bk);
+    if (report.hardN < 1 || report.hardN > 16)
+      throw new Error('scenery ' + bk + ': hard cap count ' + report.hardN + ' not in 1–16');
+    if (report.n !== report.hardN)
+      throw new Error('scenery ' + bk + ': SCENERY_N=' + report.n + ' vs hard=' + report.hardN);
+    for (const s of report.hard) {
+      if (s[4] !== 9) throw new Error('scenery ' + bk + ': expected mat 9, got ' + s[4]);
+      if (s[5] !== 'scenery') throw new Error('scenery ' + bk + ': expected tag scenery, got ' + s[5]);
+      for (const v of [s[0], s[1]])
+        if (!v || !v.every(Number.isFinite))
+          throw new Error('scenery ' + bk + ': non-finite endpoint');
+      if (!Number.isFinite(s[2]) || !Number.isFinite(s[3]))
+        throw new Error('scenery ' + bk + ': non-finite radius');
+    }
+    console.log('scenery', bk + ':', report.hardN, 'hard caps');
+  }
+  console.log('SCENERY SELF-TEST OK');
+}

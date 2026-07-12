@@ -102,6 +102,7 @@
 
 <script>
 'use strict';
+let WTIER=0,ATIER=0; /*FORGE*/
 /* ============================================================
    PROCEDURAL MONSTER LAB
    Phase II  — SDF tube method: the body is blended round-cones,
@@ -288,6 +289,7 @@ const SEED=(()=>{ /*BIOME*/
   return Math.floor(Math.random()*1e9); /*BIOME*/
 })(); /*BIOME*/
 const BIOME_KEY=(()=>{ /*BIOME*/
+  if(typeof __TEST_BIOME!=='undefined'&&BIOMES[__TEST_BIOME])return __TEST_BIOME; /*BIOME*/
   try{const m=/[?&]biome=([a-z]+)/.exec(location.search);if(m&&BIOMES[m[1]])return m[1];}catch(e){} /*BIOME*/
   const keys=Object.keys(BIOMES); /*BIOME*/
   const br=mulberry32((SEED^0x51de)>>>0); /*BIOME*/
@@ -952,6 +954,7 @@ function buildSkeleton(cr,dt){
 
   // human arms: the right target and blade orientation are action-driven.
   if(P.humanoid){
+    const wt=clamp(WTIER|0,0,4), at=clamp(ATIER|0,0,3); /*FORGE*/
     const armScale=st.scale, upper=.27*armScale, fore=.24*armScale;
     let rightHand=null;
     for(const s of[1,-1]){
@@ -975,15 +978,49 @@ function buildSkeleton(cr,dt){
       S(shA,el,.055,.043,2,soft,tag); S(el,hd,.043,.030,2,soft,tag);
       S(hd,hd,.058,.058,2,soft,tag);
       if(s>0)rightHand=hd;
-      const pad=add(shA,add(scl(bs,s*P.chestR*rs*.10),scl(bu,.02)));
-      S(pad,add(pad,scl(bu,.045)),P.chestR*rs*.52,P.chestR*rs*.46,5,hard,'pauldron');
+      const pad=add(shA,add(scl(bs,s*P.chestR*rs*.10),scl(bu,.02))); /*FORGE*/
+      const padScale=at>=1?1.10:1; /*FORGE*/
+      S(pad,add(pad,scl(bu,.045*padScale)),P.chestR*rs*.52*padScale,P.chestR*rs*.46*padScale,5,hard,'pauldron'); /*FORGE*/
     }
+    if(at>=2){ /*FORGE*/
+      const crest=add(head,add(scl(hu,P.headR*rs*.88),scl(hf,-.02))); /*FORGE*/
+      S(crest,add(crest,add(scl(hu,.16),scl(hf,-.04))),P.headR*rs*.18,.006,3,hard,'armor'); /*FORGE*/
+    } /*FORGE*/
+    if(at>=3){ /*FORGE*/
+      const back=add(st.chest,add(scl(fw,-P.chestR*rs*.62),scl(bu,.02))); /*FORGE*/
+      S(back,add(back,scl(fw,-.16)),.10,.055,6,hard,'armor'); /*FORGE*/
+      const skirt=add(st.hip,scl(bu,-P.hipR*rs*.72)); /*FORGE*/
+      for(const s of[1,-1])S(add(skirt,scl(bs,s*.12)),add(add(skirt,scl(bs,s*.12)),scl(bu,-.10)),.045,.024,6,hard,'armor'); /*FORGE*/
+    } /*FORGE*/
     const axis=hunterSwordAxis(st,bu,side,fw);
+    const bladeLen=.95*armScale*(1+.06*wt); /*FORGE*/
     st.bladeA=add(rightHand,scl(axis,.11));
-    st.bladeB=add(st.bladeA,scl(axis,.95*armScale));
+    st.bladeB=add(st.bladeA,scl(axis,bladeLen)); /*FORGE*/
     const guard=nrm(cross(up,axis));
     S(add(rightHand,scl(guard,-.11)),add(rightHand,scl(guard,.11)),.045,.045,3,hard,'sword');
-    S(st.bladeA,st.bladeB,.034,.012,5,hard,'sword');
+    const bladeMat=wt===0?5:wt===1?3:wt===2?7:wt===3?6:3; /*FORGE*/
+    const bladeR=wt>=4?.052:wt===3?.046:.034; /*FORGE*/
+    S(st.bladeA,st.bladeB,bladeR,wt>=3?.016:.012,bladeMat,hard,'sword'); /*FORGE*/
+    if(wt===1){ /*FORGE*/
+      const gn=add(rightHand,scl(guard,.11)); /*FORGE*/
+      S(gn,add(gn,scl(axis,.09)),.018,.006,3,hard,'sword'); /*FORGE*/
+    } /*FORGE*/
+    if(wt===2){ /*FORGE*/
+      const tip=nrm(add(axis,add(scl(side,.42),scl(bu,.10)))); /*FORGE*/
+      S(st.bladeB,add(st.bladeB,scl(tip,.16*armScale)),.025,.006,7,hard,'sword'); /*FORGE*/
+    } /*FORGE*/
+    if(wt>=3){ /*FORGE*/
+      const edge=add(scl(bu,.035),scl(guard,.012)); /*FORGE*/
+      S(add(st.bladeA,edge),add(st.bladeB,edge),.010,.005,6,hard,'sword'); /*FORGE*/
+      for(const s of[-1,1]){ /*FORGE*/
+        const pr=add(rightHand,scl(guard,s*.11)); /*FORGE*/
+        S(pr,add(pr,scl(axis,s*.10)),.022,.006,3,hard,'sword'); /*FORGE*/
+      } /*FORGE*/
+    } /*FORGE*/
+    if(wt===4){ /*FORGE*/
+      const pom=add(rightHand,scl(axis,-.065)); /*FORGE*/
+      S(pom,pom,.052,.052,6,hard,'sword'); /*FORGE*/
+    } /*FORGE*/
     st.jawTip=st.bladeB;
     const pel=add(st.hip,scl(bu,-.035));
     S(add(pel,scl(fw,-.10)),add(pel,scl(fw,.10)),P.hipR*rs*1.02,P.hipR*rs*.84,2,soft,'pelvis');
@@ -2080,6 +2117,59 @@ const game={
 game.foot.fill(-99);
 game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head,
               wings:game.parts.wings};
+
+// ---------- biome scenery: static mat-9 set dressing on the arena ring ----------
+function buildScenery(){ /*SCENERY*/
+  if(!HIDEF&&typeof SCENERY_FORCE==='undefined')return 0; /*SCENERY*/
+  const rng=mulberry32((SEED^0x5ce9)>>>0); /*SCENERY*/
+  const need={crater:2,dunes:3,marsh:4,tundra:3,ember:2}[BIOME_KEY]||2; /*SCENERY*/
+  const sites=[]; let guard=0; /*SCENERY*/
+  while(sites.length<need&&guard++<800){ /*SCENERY*/
+    const ang=rng()*Math.PI*2, dist=8.5+rng()*3; /*SCENERY*/
+    const x=Math.cos(ang)*dist, z=Math.sin(ang)*dist; /*SCENERY*/
+    if(sites.some(s=>Math.hypot(s[0]-x,s[1]-z)<2.2))continue; /*SCENERY*/
+    if(ROCKS.some(r=>Math.hypot(r[0]-x,r[1]-z)<2.0))continue; /*SCENERY*/
+    sites.push([x,z]); /*SCENERY*/
+  } /*SCENERY*/
+  const hard=[]; /*SCENERY*/
+  for(let i=0;i<sites.length;i++){ /*SCENERY*/
+    const [x,z]=sites[i], u=rng(); /*SCENERY*/
+    if(BIOME_KEY==='crater'){ // dead tree: trunk cone + 2 bare branches /*SCENERY*/
+      const h=1.7+u*.9; /*SCENERY*/
+      const base=V(x,-.08,z), top=V(x+(rng()-.5)*.12,h,z+(rng()-.5)*.12); /*SCENERY*/
+      hard.push([base,top,.11,.035,9,'scenery']); /*SCENERY*/
+      const mid=mix(base,top,.62); /*SCENERY*/
+      hard.push([mid,add(mid,V(.42+rng()*.18,.28,.08-rng()*.2)),.032,.01,9,'scenery']); /*SCENERY*/
+      hard.push([mid,add(mid,V(-.32-rng()*.14,.18,.32)),.028,.009,9,'scenery']); /*SCENERY*/
+    }else if(BIOME_KEY==='dunes'){ // half-buried slab: fat low near-horizontal /*SCENERY*/
+      const half=.5+u*.32, yaw=rng()*Math.PI*2; /*SCENERY*/
+      const dx=Math.cos(yaw)*half, dz=Math.sin(yaw)*half; /*SCENERY*/
+      hard.push([V(x-dx,-.06,z-dz),V(x+dx,.14+rng()*.06,z+dz),.26,.2,9,'scenery']); /*SCENERY*/
+    }else if(BIOME_KEY==='marsh'){ // reed cluster: 2 thin vertical leaners /*SCENERY*/
+      const lean=(rng()-.5)*.22; /*SCENERY*/
+      const h1=1.35+u*.55, h2=1.15+rng()*.65; /*SCENERY*/
+      hard.push([V(x,-.05,z),V(x+lean,h1,z+lean*.45),.026,.012,9,'scenery']); /*SCENERY*/
+      hard.push([V(x+.09,-.05,z-.05),V(x+.09-lean*.65,h2,z-.05+lean),.022,.01,9,'scenery']); /*SCENERY*/
+    }else if(BIOME_KEY==='tundra'){ // ice shard: tall spike + short angled /*SCENERY*/
+      const h=1.85+u*.7; /*SCENERY*/
+      hard.push([V(x,-.06,z),V(x+(rng()-.5)*.08,h,z+(rng()-.5)*.08),.1,.018,9,'scenery']); /*SCENERY*/
+      const mid=V(x,h*.42,z); /*SCENERY*/
+      hard.push([mid,add(mid,V(.32+rng()*.14,.48+rng()*.18,.18)),.048,.014,9,'scenery']); /*SCENERY*/
+    }else{ // ember: tall tapered spire + side spur /*SCENERY*/
+      const h=2.05+u*.55; /*SCENERY*/
+      hard.push([V(x,-.08,z),V(x+(rng()-.5)*.07,h,z+(rng()-.5)*.07),.12,.022,9,'scenery']); /*SCENERY*/
+      const mid=V(x,h*.52,z); /*SCENERY*/
+      hard.push([mid,add(mid,V(.28+rng()*.18,.14,.22)),.055,.018,9,'scenery']); /*SCENERY*/
+    } /*SCENERY*/
+  } /*SCENERY*/
+  if(!hard.length)return 0; /*SCENERY*/
+  const cx=sites.reduce((s,p)=>s+p[0],0)/(sites.length||1); /*SCENERY*/
+  const cz=sites.reduce((s,p)=>s+p[1],0)/(sites.length||1); /*SCENERY*/
+  addProp({soft:[],hard,center:V(cx,.5,cz),k:.05}); /*SCENERY*/
+  return hard.length; /*SCENERY*/
+} /*SCENERY*/
+const SCENERY_N=buildScenery(); /*SCENERY*/
+console.log('scenery caps:',SCENERY_N); /*SCENERY*/
 
 function footSize(cr,mul=1){
   return Math.max(.11,cr.P.legR*cr.radScale*cr.scale*(cr.isPlayer?4:5)*mul);
