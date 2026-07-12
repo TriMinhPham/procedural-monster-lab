@@ -72,6 +72,43 @@
     opacity:0;pointer-events:none;transition:opacity .1s;}
   .fail{position:fixed;inset:0;display:none;place-items:center;background:#20242e;
     color:var(--ink);font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-align:center;padding:24px;}
+
+  /* ---------- quest board (title screen) ---------- */
+  #board{position:fixed;inset:0;display:none;place-items:center;font-family:var(--mono);
+    background:radial-gradient(ellipse at center,rgba(8,8,10,.10) 0%,rgba(8,8,10,.58) 100%);}
+  body.board #board{display:grid;}
+  body.board #hud,body.board .hints{display:none;}
+  .bd{width:min(580px,92vw);max-height:88vh;overflow-y:auto;background:var(--glass);
+    border:1px solid var(--glass-line);border-radius:14px;padding:24px 28px;backdrop-filter:blur(7px);}
+  .bd-t1{font-size:22px;letter-spacing:.3em;}
+  .bd-t1 b{color:var(--amber);font-weight:600;}
+  .bd-t2{font-size:10px;letter-spacing:.14em;color:var(--ink-dim);margin:8px 0 14px;line-height:1.8;}
+  .bd-sect{font-size:10px;letter-spacing:.24em;color:var(--ink-dim);margin:14px 0 6px;}
+  .bd-q{display:block;width:100%;text-align:left;margin:6px 0;padding:9px 12px;cursor:pointer;
+    background:rgba(255,255,255,.03);border:1px solid var(--glass-line);border-radius:8px;
+    color:var(--ink);font-family:var(--mono);font-size:11px;letter-spacing:.1em;line-height:1.7;}
+  .bd-q:hover{border-color:var(--amber-soft);background:rgba(232,176,78,.07);}
+  .bd-q .stars{color:var(--amber);}
+  .bd-q b{color:var(--amber);font-weight:600;}
+  .bd-q i{color:var(--ink-dim);font-style:normal;}
+  .bd-q em{color:#8ed18b;font-style:normal;float:right;}
+  .bd-q.locked{opacity:.45;cursor:default;}
+  .bd-q.locked:hover{border-color:var(--glass-line);background:rgba(255,255,255,.03);}
+  .bd-q.fable{border-color:rgba(232,176,78,.45);}
+  .bd-inv{font-size:10px;letter-spacing:.12em;color:var(--ink);margin:4px 0 8px;}
+  .bd-f{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.1em;margin:6px 0;color:var(--ink);flex-wrap:wrap;}
+  .bd-f .cur{color:var(--amber);}
+  .bd-f i{color:var(--ink-dim);font-style:normal;}
+  .bd-f button{margin-left:auto;background:var(--amber-soft);border:1px solid var(--amber);
+    color:var(--ink);font-family:var(--mono);font-size:10px;letter-spacing:.14em;border-radius:6px;
+    padding:4px 10px;cursor:pointer;}
+  .bd-f button:disabled{opacity:.35;cursor:default;}
+  .bd-row{display:flex;gap:10px;margin-top:14px;}
+  .bd-row button{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--glass-line);
+    color:var(--ink-dim);font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+    border-radius:6px;padding:7px 0;cursor:pointer;}
+  .bd-row button:hover{color:var(--ink);border-color:var(--amber-soft);}
+  .bd-foot{margin-top:14px;font-size:9px;letter-spacing:.12em;color:var(--ink-dim);line-height:1.9;text-align:center;}
   @media (max-width:700px){ .brand .t2{display:none;} .hints{display:none;} }
 </style>
 </head>
@@ -99,6 +136,7 @@
   <div id="banner"><div class="big"></div><div class="sub"></div></div>
   <div id="flash"></div>
 </div>
+<div id="board"><div class="bd" id="bd"></div></div>
 
 <script>
 'use strict';
@@ -238,6 +276,7 @@ const PALETTES={
   dusk :['#8a6fae','#e3d3e9','#5d4a85','#3d2f5c','#e8b04e','#f0e6d2'],
   fossil:['#7d6a47','#d3c497','#5d4e35','#3e3122','#4db8a8','#e8b04e'],
   rathalos:['#c23a28','#ecd6a8','#8a2e24','#2a1612','#e8b04e','#f0a03a'],
+  fable:['#b8321f','#f4dfae','#7c1f14','#1f0c08','#f0c04a','#ffd76a'], /*SAGA — the last ember: crimson & gold*/
 };
 // world biomes — recolor ground/sky/fog/rocks; creatures keep PALETTES
 const BIOMES={
@@ -283,14 +322,73 @@ const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
 // seed + biome pick early (species RNG still re-seeds from SEED later)
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a); /*BIOME*/
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}} /*BIOME*/
+
+// ---------- THE HUNT SAGA: quests, materials, the forge ----------
+// A world seed rolls five hunts + a sealed finale; carves bank materials;
+// the forge trades them for steel. All of it persists in localStorage.
+const WPN=[
+  {name:'LAB BLADE',mul:1,cost:null},
+  {name:'BONE EDGE',mul:1.22,cost:{scale:4}},
+  {name:'MONSTER FANG',mul:1.5,cost:{scale:8,fang:3}},
+  {name:'EMBER GREATSWORD',mul:1.8,cost:{scale:12,fang:5,plate:2}},
+  {name:"FABLE'S OATH",mul:2.2,cost:{scale:20,fang:8,plate:4,relic:1},needFable:true},
+];
+const ARM=[
+  {name:'LEATHER',def:0,cost:null},
+  {name:'CHAIN',def:.12,cost:{hide:5}},
+  {name:'SCALE MAIL',def:.25,cost:{hide:8,scale:4}},
+  {name:'EMBER PLATE',def:.38,cost:{hide:10,plate:3}},
+];
+const QDEFS=[
+  {id:'1',label:'QUEST 01',rank:1,biome:'crater',hp:.62,dmg:.75,sc:.88},
+  {id:'2',label:'QUEST 02',rank:2,biome:'dunes', hp:.85,dmg:.9, sc:.95},
+  {id:'3',label:'QUEST 03',rank:3,biome:'marsh', hp:1.05,dmg:1.05,sc:1.02},
+  {id:'4',label:'QUEST 04',rank:4,biome:'tundra',hp:1.3,dmg:1.2,sc:1.08},
+  {id:'5',label:'QUEST 05',rank:5,biome:'ember', hp:1.6,dmg:1.35,sc:1.15},
+  // seed 699: the generator rolls a crown-crested, club-tailed flying wyvern — Fable itself
+  {id:'fable',label:'THE FINAL HUNT',rank:6,biome:'ember',hp:2.0,dmg:1.5,sc:1.2,fable:true,seed:699},
+];
+const SG=(()=>{
+  const d={seed:Math.floor(Math.random()*1e9),clears:{},times:{},
+           inv:{scale:0,fang:0,plate:0,hide:0,relic:0},wTier:0,aTier:0};
+  try{const s=JSON.parse(localStorage.getItem('huntsaga1'));
+    if(s&&s.seed)return Object.assign(d,s,{inv:Object.assign(d.inv,s.inv||{})});}catch(e){}
+  return d;
+})();
+function sgSave(){try{localStorage.setItem('huntsaga1',JSON.stringify(SG));}catch(e){}}
+const qseed=i=>Math.floor(mulberry32((SG.seed^((i+1)*0x9E3779B9))>>>0)()*1e9);
+const QUEST=(()=>{
+  let q=null;
+  if(typeof __TEST_QUEST!=='undefined')q=__TEST_QUEST;
+  else try{const m=/[?&]quest=(\w+)/.exec(location.search);if(m)q=m[1];}catch(e){}
+  return q==null?null:(QDEFS.find(d=>d.id===String(q))||null);
+})();
+const BOARD_MODE=(()=>{
+  if(QUEST||typeof __TEST_SEED!=='undefined')return false;
+  try{return !/[?&]seed=\d+/.test(location.search);}catch(e){}
+  return false; // headless tests: straight to the hunt
+})();
+function bankItem(s){
+  const c=/RARE/.test(s)?'relic':/SCALE/.test(s)?'scale':/FANG|HORN|CREST|SKULL/.test(s)?'fang'
+        :/PLATE/.test(s)?'plate':'hide';
+  SG.inv[c]=(SG.inv[c]||0)+(+((/[×x](\d+)/.exec(s)||[])[1])||1);
+  sgSave();
+}
+const clearCount=()=>QDEFS.filter(d=>!d.fable&&SG.clears[d.id]).length;
+function canAfford(cost){return !!cost&&Object.keys(cost).every(k=>(SG.inv[k]||0)>=cost[k]);}
+function payCost(cost){for(const k in cost)SG.inv[k]-=cost[k];sgSave();}
+function syncTiers(){WTIER=SG.wTier;ATIER=SG.aTier;}
+
 const SEED=(()=>{ /*BIOME*/
   if(typeof __TEST_SEED!=='undefined')return __TEST_SEED; /*BIOME*/
   try{const m=/[?&]seed=(\d+)/.exec(location.search);if(m)return +m[1];}catch(e){} /*BIOME*/
+  if(QUEST)return QUEST.seed||qseed(QDEFS.indexOf(QUEST)); /*SAGA*/
   return Math.floor(Math.random()*1e9); /*BIOME*/
 })(); /*BIOME*/
 const BIOME_KEY=(()=>{ /*BIOME*/
   if(typeof __TEST_BIOME!=='undefined'&&BIOMES[__TEST_BIOME])return __TEST_BIOME; /*BIOME*/
   try{const m=/[?&]biome=([a-z]+)/.exec(location.search);if(m&&BIOMES[m[1]])return m[1];}catch(e){} /*BIOME*/
+  if(QUEST&&BIOMES[QUEST.biome])return QUEST.biome; /*SAGA*/
   const keys=Object.keys(BIOMES); /*BIOME*/
   const br=mulberry32((SEED^0x51de)>>>0); /*BIOME*/
   return keys[Math.floor(br()*keys.length)]; /*BIOME*/
@@ -1761,7 +1859,7 @@ function startLeap(cr,aim,opts={}){
   return true;
 }
 function playerAttack(){
-  if(player.dead||game.carving)return;
+  if(game.board||player.dead||game.carving)return; /*SAGA*/
   if(player.act==='strike'){
     if(player._struck&&player._comboN<COMBO.length-1)player._comboQ=true;
     return;
@@ -1780,7 +1878,7 @@ function playerAttack(){
   startPlayerStrike(0);
 }
 function playerDash(){
-  if(player.dead||game.carving||player.act)return;
+  if(game.board||player.dead||game.carving||player.act)return; /*SAGA*/
   if(!spendStamina(30)){sfx.dull();return;}
   player.iFrames=.38; player.crouch=Math.max(player.crouch,.3);
   const dir=len(player.moveDir)>.1?player.moveDir:player.fw;
@@ -1801,7 +1899,7 @@ addEventListener('keydown',e=>{
   const k=e.key===' '?'space':e.key.toLowerCase();
   if(k==='tab'){e.preventDefault();cam.lock=!cam.lock;log(cam.lock?'LOCK-ON':'LOCK OFF',true);return;}
   keys.add(k);
-  if(k==='space'){e.preventDefault();if(!game.carving)startAction(player,'jump');}
+  if(k==='space'){e.preventDefault();if(!game.carving&&!game.board)startAction(player,'jump');}
   else if(k==='j')playerAttack();
   else if(k==='shift')playerDash();
   else if(k==='q')startPotion();
@@ -1810,12 +1908,14 @@ addEventListener('keydown',e=>{
   else if(k==='p'){pixelMode=!pixelMode;canvas.style.imageRendering=pixelMode?'pixelated':'';
     log(pixelMode?'PIXEL MODE ON':'PIXEL MODE OFF',true);resize();}
   else if(k==='r'&&(game.failed||game.over)){if(typeof location!=='undefined')location.reload();}
+  else if(k==='b'&&(game.failed||game.over)){if(typeof location!=='undefined')location.href=location.pathname;} /*SAGA*/
 });
 addEventListener('keyup',e=>keys.delete(e.key===' '?'space':e.key.toLowerCase()));
 function updInput(dt){
   if(player.stamRegenT>0)player.stamRegenT=Math.max(0,player.stamRegenT-dt);
   else if(player.stam<player.stamMax)
     player.stam=Math.min(player.stamMax,player.stam+24*dt);
+  if(game.board)return; /*SAGA — hands off the hunter while the board is up*/
   const {right,fw}=cam._b||camBasis();
   const f2=nrm([fw[0],0,fw[2]]), r2=nrm([right[0],0,right[2]]);
   let d=V();
@@ -1905,6 +2005,8 @@ let AC=null;
 function audioUnlock(){
   if(AC||typeof AudioContext==='undefined')return;
   try{AC=new AudioContext();}catch(e){}
+  if(AC)MUSIC.set(game.board?'title':(game.ai.enraged?'enrage': /*MUSIC — join in progress*/
+    (game.ai.state==='hunt'?'battle':'prowl')));
 }
 function tone(f0,f1,dur,type,vol){
   if(!AC||muted)return;
@@ -1988,7 +2090,7 @@ function spendStamina(cost){
   return true;
 }
 function startPotion(){
-  if(player.dead||game.over||game.failed||game.carving||game.potion||game.potions<=0)return;
+  if(game.board||player.dead||game.over||game.failed||game.carving||game.potion||game.potions<=0)return; /*SAGA*/
   game.potion={t:0};
 }
 function cancelPotion(){game.potion=null;}
@@ -2017,7 +2119,8 @@ let pixelMode=(()=>{
   try{const m=/[?&]pixel=1(?:&|$)/.exec(location.search);if(m)return true;}catch(e){}
   return false;
 })();
-const rng=mulberry32(SEED);
+let curRng=mulberry32(SEED); /*SAGA — swappable so the board can preview quest species*/
+const rng=()=>curRng();
 const pick=arr=>arr[Math.floor(rng()*arr.length)];
 const rr_=(a,b)=>a+rng()*(b-a);
 
@@ -2063,7 +2166,21 @@ function genSpecies(){
   return sp;
 }
 
+function speciesFor(seed){ /*SAGA — deterministic preview: same seed ⇒ same monster*/
+  curRng=mulberry32(seed);
+  const s=genSpecies();
+  curRng=mulberry32(SEED);
+  return s;
+}
 const SPECIES=genSpecies();
+if(QUEST){ /*SAGA — rank scales the rolled species; the finale is named*/
+  SPECIES.scale=Math.min(2.05,SPECIES.scale*(QUEST.sc||1));
+  SPECIES.hp=Math.round(650*SPECIES.scale*SPECIES.bulk*(QUEST.hp||1));
+  if(QUEST.fable){
+    SPECIES.short='Fable'; SPECIES.name='FABLE, THE LAST EMBER';
+    SPECIES.pal='fable'; SPECIES.snappy=Math.max(SPECIES.snappy,.62);
+  }
+}
 const BN=SPECIES.short;                        // "the Vulkhan" in log lines
 const CREST_LABEL={crown:'HORNS',fan:'CREST',brow:'BROW'}[SPECIES.lmHead];
 const CREST_LOOT={crown:'HORN',fan:'CREST SHARD',brow:'SKULL PLATE'}[SPECIES.lmHead];
@@ -2098,7 +2215,9 @@ const AIP={                                    // species-derived combat profile
   atkCd:2.7-1.1*SPECIES.snappy,
   swipeDmg:Math.round((10+5*SPECIES.scale)*1.3),
 };
+if(QUEST)for(const k of['biteDmg','chargeDmg','swipeDmg'])AIP[k]=Math.round(AIP[k]*(QUEST.dmg||1)); /*SAGA*/
 const game={
+  board:BOARD_MODE, /*SAGA — attract mode: the arena runs, input waits at the board*/
   over:false,failed:false,faints:0,potions:3,potion:null,loot:[],carveNodes:[],props:null,
   telegraphing:false,
   severed:false,crestBroken:false,wingBroken:false,tiredHurt:0,rage:0,time:0,hitStop:0,
@@ -2353,7 +2472,7 @@ function hitBoss(amt,tag,pos){
 function hurtPlayer(amt,from){
   if(player.iFrames>0||player.dead||game.over||game.failed)return;
   cancelPotion();
-  amt=Math.round(amt);
+  amt=Math.max(1,Math.round(amt*(1-ARM[SG.aTier].def))); /*SAGA — armor holds*/
   player.hp-=amt; flash(); sfx.hurt(); cam.shake=Math.max(cam.shake,.35);
   game.hitStop=Math.max(game.hitStop,.08);
   dmgNum(add(player.chest,V(0,.3,0)),amt,'hurt');
@@ -2407,7 +2526,7 @@ function combat(dt){
         player._sweepN++;
         if(r.d<.35){
           player._hitDone=true; player._sweepTag=r.tag; player._hitPoint=pt;
-          hitBoss(pf.dmg[0]+Math.random()*(pf.dmg[1]-pf.dmg[0]),r.tag,pt);
+          hitBoss((pf.dmg[0]+Math.random()*(pf.dmg[1]-pf.dmg[0]))*WPN[SG.wTier].mul,r.tag,pt); /*SAGA*/
           break;
         }
       }
@@ -2542,9 +2661,11 @@ function breakWing(tag){
 // ---------- boss AI: patrol → hunt → enrage → tired → flee → dead ----------
 function aggro(){
   const ai=game.ai;
+  if(game.board)return; /*SAGA — the board is a truce*/
   if(ai.state!=='patrol'||boss.dead)return;
   ai.state='hunt'; boss.roam=false;
   startAction(boss,'roar'); sfx.roar(); cam.shake=Math.max(cam.shake,.5);
+  MUSIC.set(ai.enraged?'enrage':'battle'); /*MUSIC*/
   log('The '+BN+' has noticed you!',true);
 }
 function enrage(){
@@ -2555,12 +2676,14 @@ function enrage(){
   boss.P.speed=bossBaseSpeed*1.28;
   boss.restOn=false;
   startAction(boss,'roar'); sfx.roar(); cam.shake=Math.max(cam.shake,.7);
+  MUSIC.set('enrage'); /*MUSIC*/
   log('The '+BN+' is ENRAGED!',true);
 }
 function deEnrage(){
   game.ai.enraged=false;
   setDyn(boss,boss.P.dyn[0],boss.P.dyn[1],boss.P.dyn[2]);
   boss.P.speed=bossBaseSpeed;
+  if(!boss.dead)MUSIC.set('battle'); /*MUSIC*/
 }
 function tired(){
   const ai=game.ai;
@@ -2584,6 +2707,7 @@ function flee(){
     if(d>bestD){bestD=d;bestT=c;}
   }
   boss.target=bestT;
+  MUSIC.set('prowl'); /*MUSIC — the fight pauses while it flees*/
   log('The '+BN+' limps away…',true);
 }
 function killBoss(){
@@ -2601,16 +2725,25 @@ function killBoss(){
   const NU=BN.toUpperCase();
   game.carveNodes.push({at:'boss',uses:3,loot:[NU+' SCALE ×2',NU+' FANG',NU+' PLATE — RARE!']});
   sfx.win(); cam.shake=Math.max(cam.shake,.4);
+  MUSIC.set('victory'); /*MUSIC*/
+  if(QUEST){ /*SAGA — clear credit + best time*/
+    SG.clears[QUEST.id]=true;
+    const t=Math.floor(game.time);
+    if(!SG.times[QUEST.id]||t<SG.times[QUEST.id])SG.times[QUEST.id]=t;
+    sgSave();
+  }
   log('The '+BN+' is slain!',true);
   const mm=Math.floor(game.time/60),ss=Math.floor(game.time%60);
   setTimeout(()=>banner('QUEST COMPLETE',
-    "HUNT TIME "+mm+"'"+String(ss).padStart(2,'0')+'" · CARVE THE CORPSE — E · R TO RESET'),1400);
+    "HUNT TIME "+mm+"'"+String(ss).padStart(2,'0')+'" · CARVE THE CORPSE — E'+
+    (QUEST&&QUEST.fable?' · THE WORLD IS QUIET NOW · B — BOARD':' · B — BOARD · R — HUNT AGAIN')),1400);
 }
 function faint(){
   game.faints++; player.hp=0; player.dead=true; game.carving=null; cancelPotion(); sfx.faint();
   if(game.faints>=3){
     game.failed=true;
-    banner('QUEST FAILED','THE HUNTER WAS DEFEATED · PRESS R TO RETRY');
+    MUSIC.set('defeat'); /*MUSIC*/
+    banner('QUEST FAILED','THE HUNTER WAS DEFEATED · R — RETRY · B — BOARD');
     return;
   }
   banner('YOU FAINTED','RETURNING TO CAMP… ('+game.faints+'/3)',2200);
@@ -2758,7 +2891,7 @@ function nearNode(){
   return bd<(bestN&&bestN.at==='boss'?2.6:1.7)?bestN:null;
 }
 function tryCarve(){
-  if(game.carving||player.dead||player.jumpY>0||game.failed)return;
+  if(game.board||game.carving||player.dead||player.jumpY>0||game.failed)return; /*SAGA*/
   const n=nearNode(); if(!n)return;
   game.carving={node:n,t:0};
 }
@@ -2780,6 +2913,7 @@ function carveUpdate(dt){
     if(c.t>=1.25){
       const item=c.node.loot.shift()||'MONSTER HIDE';
       c.node.uses--; game.loot.push(item);
+      bankItem(item); /*SAGA — materials persist to the forge*/
       log('+ '+item,true); sfx.carve();
       game.carving=null;
     }
@@ -2843,7 +2977,72 @@ addEventListener('resize',resize);
 // ---------- main loop ----------
 const palBuf=new Float32Array(36), spineBuf=new Float32Array(16);
 const wingBuf=new Float32Array(40); // 2 wings × 5 strip points
-{ // quest intro: the body plan is the briefing
+// ---------- the quest board (title screen) ----------
+function buildBoard(){ /*SAGA*/
+  const bd=$('bd'); if(!bd||!bd.querySelectorAll)return;
+  const stars=n=>'★'.repeat(Math.min(n,5))+(n>5?'✦':'');
+  const fmt=t=>Math.floor(t/60)+"'"+String(Math.floor(t%60)).padStart(2,'0')+'"';
+  const costStr=c=>Object.entries(c).map(([k,v])=>v+' '+k.toUpperCase()).join(' + ');
+  let h='<div class="bd-t1">MONSTER <b>HUNT</b></div>'+
+    '<div class="bd-t2">THE HUNT SAGA · WORLD #'+SG.seed+'<br>'+
+    'FIVE HUNTS AND A SEALED FINALE. EVERY SPECIES IS GENERATED — THIS WORLD IS YOURS ALONE.<br>'+
+    'CARVE MATERIALS · FORGE STEEL · BREAK THE SEAL</div>';
+  h+='<div class="bd-sect">QUESTS</div>';
+  QDEFS.forEach((d,i)=>{
+    const sp=speciesFor(d.seed||qseed(i)), done=SG.clears[d.id];
+    const hints=[];
+    if(sp.wings)hints.push('WINGED');
+    if(sp.density>1.4)hints.push('STONE-HIDE');
+    if(sp.plated)hints.push('PLATED');
+    if(sp.bulk>1.12)hints.push('MASSIVE');
+    if(sp.snappy>.7)hints.push('TWITCHY');
+    if(sp.pairs>=3)hints.push('MANY-LEGGED');
+    const locked=d.fable&&clearCount()<3;
+    const nm=d.fable?'FABLE, THE LAST EMBER':sp.name;
+    h+='<button class="bd-q'+(locked?' locked':'')+(d.fable?' fable':'')+'" data-q="'+d.id+'"'+
+      (locked?' disabled':'')+'><span class="stars">'+stars(d.rank)+'</span> '+d.label+' · '+
+      BIOMES[d.biome].name+(done?'<em>✓ '+(SG.times[d.id]?fmt(SG.times[d.id]):'')+'</em>':'')+'<br>'+
+      (locked?'<i>SEALED — CLEAR THREE HUNTS TO BREAK THE SEAL</i>'
+             :'<b>SLAY '+nm+'</b> <i>'+(hints.slice(0,2).join(' · ')||'A BALANCED PREDATOR')+'</i>')+
+      '</button>';
+  });
+  h+='<div class="bd-sect">THE FORGE</div>';
+  h+='<div class="bd-inv">POUCH · '+['scale','fang','plate','hide','relic']
+    .map(k=>k.toUpperCase()+' '+(SG.inv[k]||0)).join(' · ')+'</div>';
+  const wN=WPN[SG.wTier+1], wSeal=wN&&wN.needFable&&!SG.clears.fable;
+  h+='<div class="bd-f">SWORD · <span class="cur">'+WPN[SG.wTier].name+'</span>'+
+    (wN?'<i>→ '+wN.name+' · '+costStr(wN.cost)+'</i><button id="fw"'+
+      ((wSeal||!canAfford(wN.cost))?' disabled':'')+'>'+(wSeal?'SEALED':'FORGE')+'</button>'
+       :'<i>— MASTERWORK</i>')+'</div>';
+  const aN=ARM[SG.aTier+1];
+  h+='<div class="bd-f">ARMOR · <span class="cur">'+ARM[SG.aTier].name+'</span>'+
+    (aN?'<i>→ '+aN.name+' · '+costStr(aN.cost)+'</i><button id="fa"'+
+      (!canAfford(aN.cost)?' disabled':'')+'>FORGE</button>'
+       :'<i>— MASTERWORK</i>')+'</div>';
+  h+='<div class="bd-row"><button id="freeH">FREE HUNT · RANDOM SPECIES</button>'+
+     '<button id="newW">NEW WORLD · REROLL QUESTS</button></div>';
+  h+='<div class="bd-foot">ZERO ASSETS · ZERO KEYFRAMES — EVERY SPECIES, SOUND AND SONG IS MATH<br>'+
+     'FAREWELL BUILD · LED BY CLAUDE FABLE 5 · FORGED WITH GPT-5.6 &amp; GROK 4.5</div>';
+  bd.innerHTML=h;
+  bd.querySelectorAll('.bd-q:not(.locked)').forEach(b=>
+    b.addEventListener('click',()=>{location.href='?quest='+b.dataset.q;}));
+  const fw=$('fw'),fa=$('fa'),fh=$('freeH'),nw=$('newW');
+  if(fw)fw.addEventListener('click',()=>{payCost(WPN[SG.wTier+1].cost);SG.wTier++;sgSave();
+    syncTiers();sfx.carve();buildBoard();});
+  if(fa)fa.addEventListener('click',()=>{payCost(ARM[SG.aTier+1].cost);SG.aTier++;sgSave();
+    syncTiers();sfx.carve();buildBoard();});
+  if(fh)fh.addEventListener('click',()=>{location.href='?seed='+Math.floor(Math.random()*1e9);});
+  if(nw)nw.addEventListener('click',()=>{SG.seed=Math.floor(Math.random()*1e9);
+    SG.clears={};SG.times={};sgSave();location.reload();});
+}
+if(game.board){ /*SAGA — home screen over a live arena*/
+  if(document.body&&document.body.classList)document.body.classList.add('board');
+  buildBoard();
+  player.restOn=true; player.target=[player.leader[0],0,player.leader[2]];
+  const q2=$('quest2');
+  if(q2)q2.textContent='THE HUNT SAGA · WORLD #'+SG.seed;
+}else{ // quest intro: the body plan is the briefing
+  syncTiers(); /*SAGA — forged steel carries into the hunt*/
   const tells=[];
   if(SPECIES.wings)tells.push('WINGS — IT DIVES FROM ABOVE. BREAK THEM TO GROUND IT');
   if(!HAS_TAIL)tells.push('NO TAIL — EXPECT GROUND SLAMS');
@@ -2858,10 +3057,15 @@ const wingBuf=new Float32Array(40); // 2 wings × 5 strip points
     tells.push('HIDE DEFLECTS STEEL — STRIKE THE BELLY');
   else if(SPECIES.softBelly||(SPECIES.hz&&SPECIES.hz.belly>1.1))
     tells.push('SOFT UNDERBELLY — AIM LOW ON THE TORSO');
-  banner('SLAY '+SPECIES.name,
+  if(QUEST&&QUEST.fable)
+    banner('FABLE, THE LAST EMBER',
+      'THE FINAL HUNT — GIVE IT EVERYTHING · '+
+      (tells.length?tells.join(' · '):'READ IT AS YOU FIGHT'),7200);
+  else banner('SLAY '+SPECIES.name,
     (tells.length?tells.join(' · '):'A BALANCED PREDATOR — READ IT AS YOU FIGHT'),5600);
   const q2=$('quest2');
-  if(q2)q2.textContent='QUEST 01 · '+BIOME.name+' · SLAY '+SPECIES.name+' · SPECIES #'+SEED; /*BIOME*/
+  if(q2)q2.textContent=(QUEST?QUEST.label:'FREE HUNT')+' · '+BIOME.name+' · SLAY '+SPECIES.name+
+    (QUEST?'':' · SPECIES #'+SEED); /*BIOME*/
 }
 let last=performance.now();
 function frame(now){
@@ -2895,7 +3099,10 @@ function frame(now){
   game.rage+=(rageTarget-game.rage)*Math.min(1,dt*2);
   packScene([player.segs,boss.segs,game.props]);
 
-  cam.follow.update(dt,player.chest);
+  if(game.board){ /*SAGA — attract mode: slow orbit around the roaming monster*/
+    cam.az+=dt*.06; cam.el=.30+.05*Math.sin(game.time*.11); cam.dist=10.5;
+  }
+  cam.follow.update(dt,game.board?boss.chest:player.chest);
   lockCam(dt);
   const b=camBasis(); cam._b=b;
   const palP=PALETTES[player.pal],palB=PALETTES[boss.pal];

@@ -527,3 +527,64 @@ vm.runInContext(`
   }
   console.log('SCENERY SELF-TEST OK');
 }
+
+// SAGA self-test: quest scaling, the fable finale, and the forge economy.
+{
+  const mk = (extra) => {
+    const c = {
+      console: { log() {}, warn() {}, error: console.error },
+      Math: seededMath, JSON, Float32Array, Map, Set, Proxy, Error, String,
+      document: {
+        getElementById: id => (id === 'gl' ? canvas : makeEl()),
+        querySelectorAll: () => [],
+        createElement: () => makeEl(),
+        body: makeEl(),
+      },
+      matchMedia: () => ({ matches: false }),
+      addEventListener() {},
+      innerWidth: 1200, innerHeight: 800, devicePixelRatio: 1,
+      performance: { now: () => 0 },
+      requestAnimationFrame: () => {},
+      setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {},
+      ...extra,
+    };
+    vm.createContext(c);
+    vm.runInContext(js, c, { filename: 'hunt-saga.js' });
+    return c;
+  };
+  const read = (c, expr) => vm.runInContext(expr, c);
+
+  const q1 = mk({ __TEST_SEED: 7, __TEST_QUEST: '1' });
+  const q5 = mk({ __TEST_SEED: 7, __TEST_QUEST: '5' });
+  if (!(read(q5, 'SPECIES.hp') > read(q1, 'SPECIES.hp')))
+    throw new Error('saga: quest 5 hp not above quest 1');
+  if (!(read(q5, 'AIP.biteDmg') > read(q1, 'AIP.biteDmg')))
+    throw new Error('saga: quest 5 bite not above quest 1');
+  if (read(q1, 'BIOME_KEY') !== 'crater' || read(q5, 'BIOME_KEY') !== 'ember')
+    throw new Error('saga: quest biomes not wired');
+  if (read(q1, 'game.board') !== false) throw new Error('saga: board mode leaked into quest');
+
+  const fb = mk({ __TEST_QUEST: 'fable' });
+  if (read(fb, 'SPECIES.name') !== 'FABLE, THE LAST EMBER') throw new Error('saga: fable name');
+  if (read(fb, 'SPECIES.base') !== 'rathalos') throw new Error('saga: fable base ' + read(fb, 'SPECIES.base'));
+  if (read(fb, 'SPECIES.pal') !== 'fable' || !read(fb, 'PALETTES.fable')) throw new Error('saga: fable palette');
+  if (read(fb, 'SEED') !== 699) throw new Error('saga: fable seed');
+  if (!read(fb, 'SPECIES.wings')) throw new Error('saga: fable must fly');
+
+  // forge economy math
+  read(fb, 'bankItem("TEST SCALE ×2"); bankItem("TEST PLATE — RARE!"); bankItem("TEST FANG")');
+  if (read(fb, 'SG.inv.scale') !== 2 || read(fb, 'SG.inv.relic') !== 1 || read(fb, 'SG.inv.fang') !== 1)
+    throw new Error('saga: banking math ' + read(fb, 'JSON.stringify(SG.inv)'));
+  if (read(fb, 'canAfford({scale:3})') !== false) throw new Error('saga: canAfford false-positive');
+  read(fb, 'SG.inv.scale=10');
+  if (read(fb, 'canAfford({scale:4})') !== true) throw new Error('saga: canAfford false-negative');
+  read(fb, 'payCost({scale:4})');
+  if (read(fb, 'SG.inv.scale') !== 6) throw new Error('saga: payCost math');
+  if (!read(fb, 'WPN.every((w,i)=>!i||w.mul>WPN[i-1].mul)')) throw new Error('saga: WPN not monotonic');
+  read(fb, 'SG.wTier=2;SG.aTier=1;syncTiers()');
+  if (read(fb, 'WTIER') !== 2 || read(fb, 'ATIER') !== 1) throw new Error('saga: tier sync');
+  // armor: 50 raw through 38% plate = 31
+  read(fb, 'SG.aTier=3; player.iFrames=0; player.hp=100; hurtPlayer(50,null)');
+  if (read(fb, 'player.hp') !== 69) throw new Error('saga: armor math, hp=' + read(fb, 'player.hp'));
+  console.log('SAGA SELF-TEST OK | fable seed 699 · forge + banking + armor verified');
+}
