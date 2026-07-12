@@ -272,6 +272,64 @@ vm.runInContext(`
   if (spurs.length < 1) throw new Error('broken leg has no bone-spur capsule');
   __drive(30); __checkFinite('leg-break');
 
+  // 5d. real mouth: tooth rows ride the mandible, dark maw shows through the gape,
+  // and the bite gapes through the wind-up then chomps shut on the strike
+  if (boss.P.jaw) {
+    boss.act = null; boss.pant = 0; boss.pantTgt = 0;
+    boss.jawEnv = 1; buildSkeleton(boss, 1 / 60);
+    const teeth = boss.segs.hard.filter(s => s[5] === 'head' && s[4] === 7);
+    if (boss.P.teeth && teeth.length < 4)
+      throw new Error('mouth has too few teeth: ' + teeth.length);
+    if (!boss.segs.soft.some(s => s[5] === 'head' && s[4] === 8))
+      throw new Error('open mouth shows no maw');
+    boss.jawEnv = 0; buildSkeleton(boss, 1 / 60);
+    if (boss.segs.soft.some(s => s[5] === 'head' && s[4] === 8))
+      throw new Error('closed mouth still shows the maw');
+    // a fresh, non-panting boss: exhaustion legitimately holds the mouth open
+    game.ai.state = 'hunt'; game.ai.tiredT = 0; game.ai.stam = 100;
+    boss.restOn = false; boss.pant = 0; boss.pantTgt = 0;
+    startStrike(boss, { wind: .3, active: .2, rec: .3, imp: 0, jaw: 1, recoil: 0 });
+    __drive(10);
+    if (boss.jawEnv < .45) throw new Error('bite wind-up did not gape: ' + boss.jawEnv);
+    __drive(26);
+    if (boss.jawEnv > .25) throw new Error('bite did not snap shut: ' + boss.jawEnv);
+    boss.act = null;
+    __drive(30); __checkFinite('mouth');
+  } else console.log('mouth | (jawless species — skipped)');
+
+  // 5e. wing break: webbing torn on the struck side, grounded for good, and a
+  // mid-air break crashes the monster down into a knockdown opening
+  if (SPECIES.wings) {
+    buildSkeleton(boss, 1 / 60);
+    const w0 = boss.segs.soft.filter(s => s[5] === 'wing0').length;
+    const nodesW = game.carveNodes.length;
+    game.parts.wings = 5;
+    boss.air = .6; // mid-swoop when the wing gives out
+    hitBoss(10, 'wing1', boss.chest);
+    if (!game.wingBroken || !boss.wingBroken) throw new Error('wing did not break');
+    if (boss.brokenWingS !== -1) throw new Error('broken wing side not recorded');
+    if (boss.flyOK) throw new Error('broken wing left flyOK on');
+    if (game.ai.state !== 'tired') throw new Error('mid-air wing break did not crash the boss');
+    if (game.carveNodes.length !== nodesW + 1) throw new Error('no wing carve node');
+    buildSkeleton(boss, 1 / 60);
+    const w1 = boss.segs.soft.filter(s => s[5] === 'wing1').length;
+    if (w1 >= w0) throw new Error('broken wing not visibly torn: ' + w0 + '→' + w1);
+    flee();
+    if (boss.flyOK) throw new Error('broken-winged boss still flies to safety');
+    game.ai.fled = false; game.ai.state = 'hunt'; game.ai.tiredT = 0;
+    boss.restOn = false; boss.air = 0; boss.pantTgt = 0;
+    __drive(30); __checkFinite('wing-break');
+  } else console.log('wing-break | (wingless species — skipped)');
+
+  // capsule budget: player + boss (mouth open, all break extras) must fit the buffer
+  boss.jawEnv = 1;
+  buildSkeleton(player, 1 / 60); buildSkeleton(boss, 1 / 60);
+  const capsUsed = player.segs.soft.length + player.segs.hard.length
+                 + boss.segs.soft.length + boss.segs.hard.length;
+  if (capsUsed > MAXN) throw new Error('capsule budget blown: ' + capsUsed + '/' + MAXN);
+  console.log('capsules:', capsUsed + '/' + MAXN);
+  boss.jawEnv = 0;
+
   // 6. boss slam event sanity (enraged move) — force it
   game.ai.slamCool = -1; game.ai.atkCool = 9; game.ai.chargeCool = 9;
   player.leader = [boss.leader[0] + 3, player.P.chestH, boss.leader[2]];

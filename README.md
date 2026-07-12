@@ -44,11 +44,24 @@ briefs the tells.
   family has its own synthesized tell tone: fights are learnable, then fair.
 - **Part breaks**: every breakable zone has a damage pip bar on the HUD, so
   focused hits visibly build toward the break. Drain the tail pool and it
-  detaches into the world as a carveable prop; shatter the **head crest** and
-  the landmark snaps to stubs, shards drop as a second carveable prop, and the
-  exposed skull takes +30% for the rest of the hunt; break a leg and the
-  monster limps at 72% speed on a visibly buckled leg — bowed stance, swollen
-  knee, a pale spur of bone.
+  detaches into the world as a carveable prop — a true amputation: the stump
+  ends blunt and the tail-tip weapon (club, spike fan, band) leaves with the
+  piece; shatter the **head crest** and the landmark snaps to stubs, shards
+  drop as a second carveable prop, and the exposed skull takes +30% for the
+  rest of the hunt; break a leg and the monster limps at 72% speed on a
+  visibly buckled leg — bowed stance, swollen knee, a pale spur of bone;
+  break the **wings** (membranes are always a soft zone, even on plated
+  hides) and the flyer is grounded for good — no more dive-bombs, no flying
+  escape, a mid-air break crashes it down into a knockdown opening, and the
+  broken wing hangs dead at its side with the webbing torn to rags.
+- **Real mouths**: every jawed species gets a twin-ramus mandible on a
+  working hinge, tooth rows that ride the jaw, and a dark wet maw visible
+  through the gape. Bites gape wide through the wind-up tell, hang open
+  through the lunge, then *chomp* shut right as the strike lands.
+- **Wings are bat-plan anatomy**: humerus → radius → three webbed flight
+  fingers plus a wrist thumb-claw; folded they shingle along the flank,
+  airborne the flap travels outward (wrist lags shoulder, tips lag wrist)
+  while the membrane billows on the upstroke.
 - **Boss AI** rides the dynamics system: patrol → roar/aggro → bite, charge,
   jump-slam → **enrage** at 50% HP (f up, ζ down, eyes glow) → exhausted rest
   (free damage window) → flees at 20% to sleep it off → carve the corpse.

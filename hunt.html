@@ -150,7 +150,7 @@ const PRESETS={
     lu:.30, ll:.34, legR:.05, stance:[.46,.44], lead:[.16,-.08],
     stepThresh:.30, stepDur:.17, stepH:.11, speed:1.5, stride:.55,
     undulate:.07, tailN:6, tailLen:1.15, bob:.015, post:.05,
-    brow:true,
+    jaw:true, teeth:true, teethN:2, brow:true,
     ears:false, antennae:false, palps:false, spikesDefault:true,
     dyn:[1.6,.5,1.2], pal:'moss', k:.055
   },
@@ -161,6 +161,7 @@ const PRESETS={
     lu:.33, ll:.29, fs:.20, legR:.055, stance:[.26,.24], lead:[.14,-.10],
     stepThresh:.34, stepDur:.15, stepH:.14, speed:2.1, stride:.7,
     undulate:0, tailN:5, tailLen:.85, bob:.03, post:.9,
+    jaw:true, teeth:true, teethN:3,
     ears:true, antennae:false, palps:false, spikesDefault:false,
     muscle:true, brow:true, claws:2,
     dyn:[2.2,.7,.9], pal:'ember', k:.05
@@ -179,7 +180,7 @@ const PRESETS={
     pairs:1, mode:'zigzag', soloU:.8,
     bodyLen:1.35, chestH:.78, hipH:.88, chestR:.26, midR:.29, hipR:.33,
     neckLen:.30, neckUp:.10, headR:.23, headLen:.62, snout:.7,
-    jaw:true, teeth:true, arms:true,
+    jaw:true, teeth:true, teethN:4, arms:true,
     lu:.46, ll:.40, fs:.30, legR:.085, stance:[.24], lead:[.10],
     stepThresh:.44, stepDur:.22, stepH:.22, speed:2.2, stride:1.05,
     undulate:0, tailN:8, tailLen:1.5, bob:.05, post:.95,
@@ -200,7 +201,7 @@ const PRESETS={
   wyvern:{ // bird group: biped + wings, flies to far calls
     pairs:1, mode:'zigzag', soloU:.75,
     bodyLen:.95, chestH:.58, hipH:.62, chestR:.22, midR:.19, hipR:.20,
-    neckLen:.34, neckUp:.16, headR:.13, headLen:.42, snout:.5, jaw:true,
+    neckLen:.34, neckUp:.16, headR:.13, headLen:.42, snout:.5, jaw:true, teeth:true, teethN:3,
     lu:.34, ll:.30, fs:.22, legR:.05, stance:[.22], lead:[.08],
     stepThresh:.34, stepDur:.16, stepH:.16, speed:2.0, stride:.75,
     undulate:0, tailN:6, tailLen:1.2, bob:.03, post:.95,
@@ -213,7 +214,7 @@ const PRESETS={
     pairs:1, mode:'zigzag', soloU:.78,
     bodyLen:1.22, chestH:.76, hipH:.74, chestR:.30, midR:.26, hipR:.28,
     neckLen:.32, neckUp:.15, headR:.20, headLen:.56, snout:.62,
-    jaw:true, teeth:true, teethN:5, brow:true, muscle:true, claws:3, plates:true,
+    jaw:true, teeth:true, teethN:4, brow:true, muscle:true, claws:3, plates:true,
     crests:true, flameWings:true, tailClub:true,
     lu:.44, ll:.40, fs:.30, legR:.078, stance:[.26], lead:[.10],
     stepThresh:.40, stepDur:.18, stepH:.20, speed:2.15, stride:.90,
@@ -278,6 +279,7 @@ function makeCreature(name,opts={}){
     stamRegenT:0, dead:false,
     deadT:0, deathSide:1, deathBreath:0, lastHitDir:null,
     iFrames:0, moveDir:V(), limpLeg:-1, crestBroken:false,
+    wingBroken:false, brokenWingS:0,
     jawTip:V(1,0,0), headPos:V(1,.5,0), bladeA:V(), bladeB:V(),
     _sweepTag:null, _sweepN:0, _hitPoint:null, segs:null,
   };
@@ -336,7 +338,7 @@ function simulate(cr,dt){
     if(st.act==='strike'){
       const pf=st.actProf;
       if(q<pf.wind){
-        st.jawEnv=Math.max(st.jawEnv,pf.jaw*(q/pf.wind)*.5);
+        st.jawEnv=Math.max(st.jawEnv,pf.jaw*(.15+.85*q/pf.wind)); // gape wide through the tell
         st.imp=add(st.imp,scl(st.fw,-pf.recoil*dt));
       }else if(!st._struck){
         st._struck=true; st.jawEnv=pf.jaw;
@@ -345,7 +347,8 @@ function simulate(cr,dt){
           st.imp=add(st.imp,st._dashCarry); st._dashCarry=V();
         }
       }else if(q>pf.wind+pf.active+pf.rec){st.act=null;st._struck=false;}
-      else st.jawEnv*=Math.exp(-5*dt);
+      // jaw hangs open through the lunge, then CHOMPS shut right as the bite lands
+      else if(q>pf.wind+pf.active*.45)st.jawEnv*=Math.exp(-22*dt);
     }else if(st.act==='tailswipe'){
       const pf=st.actProf;
       if(q<pf.wind)st.crouch=Math.max(st.crouch,.35*(q/pf.wind)); // hunker tell
@@ -692,12 +695,39 @@ function buildSkeleton(cr,dt){
       P.headR*rs,P.headR*rs*P.snout,1,soft,'head');
   }
 
-  // jaw — hinges open during attacks
+  // mouth — a real one: twin-ramus mandible on the hinge, tooth rows that
+  // ride the jaw, dark maw behind the gape. Bites read as a mouth closing.
   if(P.jaw&&!P.humanoid){
-    const jp=add(head,add(scl(hf,-P.headLen*.05),scl(hu,-P.headR*rs*.25)));
-    const ja=.16+st.jawEnv*.55;
-    const jd=nrm(add(scl(hf,Math.cos(ja)),scl(hu,-Math.sin(ja))));
-    S(jp,add(jp,scl(jd,P.headLen*.55)),P.headR*rs*.5,P.headR*rs*.22,1,soft,'head');
+    const hR=P.headR*rs;
+    const ja=.14+st.jawEnv*.68;   // wide theatrical gape — the bite must read at combat range
+    const jp=add(head,add(scl(hf,-P.headLen*.05),scl(hu,-hR*.25)));   // hinge at the skull rear
+    const jd=nrm(add(scl(hf,Math.cos(ja)),scl(hu,-Math.sin(ja))));    // mandible axis
+    const ju=nrm(add(scl(hu,Math.cos(ja)),scl(hf,Math.sin(ja))));     // mandible up — rides the hinge
+    const chin=add(jp,scl(jd,P.headLen*.55));
+    for(const s2 of[1,-1]){                       // paired rami, not a paddle
+      const r0=add(jp,scl(hs,s2*hR*.30));
+      S(r0,add(chin,scl(hs,s2*hR*.08)),hR*.28,hR*.14,1,soft,'head');
+    }
+    if(HIDEF)S(add(chin,scl(jd,-hR*.02)),add(chin,scl(ju,hR*.10)),hR*.18,hR*.11,1,soft,'head'); // chin knit
+    if(st.jawEnv>.12){                            // dark wet maw shows only through the gape
+      const mw=add(mix(jp,chin,.42),scl(ju,hR*.18));
+      S(mw,add(mw,scl(jd,P.headLen*.18)),hR*.28,hR*.16,8,soft,'head');
+    }
+    if(P.teeth){
+      const tN=HIDEF?(P.teethN||3):2;
+      for(const s2 of[1,-1])for(let i=0;i<tN;i++){ // upper row hangs off the lip line
+        const u=i/Math.max(tN-1,1);
+        const b=add(head,add(scl(hf,P.headLen*(.16+.30*u)),
+          add(scl(hs,s2*hR*(.40-.14*u)),scl(hu,-hR*.30))));
+        S(b,add(b,add(scl(hu,-hR*(.30-.06*u)),scl(hf,hR*.05))),hR*(.13-.03*u),.004,7,hard,'head');
+      }
+      const lN=Math.min(2,Math.max(1,tN-1));
+      for(const s2 of[1,-1])for(let i=0;i<lN;i++){ // lower fangs ride the mandible
+        const u=.58+.30*(i/Math.max(lN-1,1));
+        const b=add(mix(jp,chin,u),scl(hs,s2*hR*(.26-.10*(u-.58))));
+        S(b,add(b,add(scl(ju,hR*.26),scl(jd,hR*.04))),hR*.10,.004,7,hard,'head');
+      }
+    }
   }
 
   // hero skull: brow ridges, cheekbones, cranial dome, nasal ridge
@@ -766,39 +796,66 @@ function buildSkeleton(cr,dt){
     } // 3 caps
   }
 
-  // wings — flush along the body when folded, flapping limb-fan when open
+  // wings — bat plan: humerus → radius → three webbed flight fingers. Folded
+  // they shingle along the flank; airborne the flap travels outward (wrist
+  // lags shoulder, tips lag wrist) and the membrane billows on the upstroke.
+  // A broken wing hangs dead at the side, its webbing torn to rags.
   if(st.wings){
     const wsc=(P.wingScale||1)*(P.chestR/.22);
     const open=st.wOpen, fl=st.flap;
-    const nMem=P.flameWings?6:4;
     const memMat=P.flameWings?6:2;
     const span=P.flameWings?1.12:1;
     for(const s of[1,-1]){
+      const wTag='wing'+(s>0?0:1);
+      const brk=st.wingBroken&&st.brokenWingS===s;
       const sh=add(st.chest,add(scl(bs,s*P.chestR*rs*.7),scl(bu,P.chestR*rs*.4)));
-      const F1=.35+Math.sin(fl)*.75, F2=.10+Math.sin(fl-.7)*.95;
+      const F1=.35+Math.sin(fl)*.72, F2=.06+Math.sin(fl-.6)*.92, F3=Math.sin(fl-1.15);
       const d1=add(scl(bs,s*Math.cos(F1)),scl(bu,Math.sin(F1)));
       const d2=add(scl(bs,s*Math.cos(F2)),scl(bu,Math.sin(F2)));
-      const eO=add(sh,add(scl(d1,.34*wsc),scl(fw,-.04)));
-      const wO=add(eO,add(scl(d2,.36*wsc),scl(fw,-.08)));
-      const tO=add(wO,add(scl(d2,.32*wsc*span),scl(fw,-.18*span)));
-      const eF=add(sh,add(scl(fw,-.22*wsc),scl(bs,s*.03)));
-      const wF=add(eF,add(scl(fw,-.26*wsc),scl(bu,-.02)));
-      const tF=add(wF,scl(fw,-.24*wsc*span));
-      const e=mix(eF,eO,open),w=mix(wF,wO,open),tp=mix(tF,tO,open);
-      S(sh,e,.062*wsc,.048*wsc,2,soft);
-      S(e,w,.048*wsc,.036*wsc,2,soft);
-      S(w,tp,.036*wsc,.014*wsc,6,soft);
-      for(let m=0;m<nMem;m++){
-        const u=m/(nMem-1);
-        const an=mix(e,tp,u);
-        const bk=add(scl(fw,-(.48-.07*u)*wsc*span),scl(bu,-.10*open));
-        S(an,add(an,bk),.034*wsc*(1-.15*u),.008,memMat,soft);
+      const eO=add(sh,add(scl(d1,.32*wsc),scl(fw,-.03)));
+      const wO=add(eO,add(scl(d2,.34*wsc),scl(fw,-.07)));
+      const eF=add(sh,add(scl(fw,-.20*wsc),scl(bs,s*.03)));
+      const wF=add(eF,add(scl(fw,-.24*wsc),scl(bu,.03)));
+      const eBk=add(sh,add(scl(bs,s*.17*wsc),scl(bu,-.12*wsc)));       // broken: shoulder droop,
+      const wBk=add(eBk,add(scl(bs,s*.10*wsc),add(scl(bu,-.26*wsc),scl(fw,-.05*wsc)))); // wrist to the dirt
+      const e=brk?eBk:mix(eF,eO,open), w=brk?wBk:mix(wF,wO,open);
+      if(brk)w[1]=Math.max(w[1],.10);
+      S(sh,e,.060*wsc,.046*wsc,2,soft,wTag);
+      S(e,w,.046*wsc,.032*wsc,2,soft,wTag);
+      if(HIDEF){ // wrist thumb-claw
+        const cd=brk?nrm(add(scl(bu,-.7),scl(fw,.3)))
+                    :nrm(add(scl(d2,.45),add(scl(fw,.55),scl(bu,.2))));
+        S(w,add(w,scl(cd,.085*wsc)),.018*wsc,.004,7,hard,wTag);
       }
-      if(P.flameWings){
-        S(tp,add(tp,add(scl(d2,.06*wsc),scl(fw,-.04))),.014*wsc,.004,3,hard);
-        const le=mix(sh,e,.55);
-        S(le,add(le,add(scl(d1,.05*wsc),scl(bu,.03))),.018*wsc,.004,3,hard);
+      // flight fingers: long leading spar, shorter trailing spars swept back
+      const FIG=[[.46,-.05],[.42,-.28],[.32,-.52]];   // [reach, chord sweep]
+      const tips=[];
+      for(let f=0;f<3;f++){
+        const dT=nrm(add(d2,scl(bu,F3*(.24+.15*f))));                  // tip wave chases the wrist
+        const tO=add(w,add(scl(dT,FIG[f][0]*wsc*span),scl(fw,FIG[f][1]*wsc*span)));
+        const tF=add(w,add(scl(fw,-(.20+.08*f)*wsc),scl(bu,(.05-.045*f)*wsc)));
+        const tB=add(w,add(scl(bu,-(.12+.05*f)*wsc),add(scl(fw,(-.02-.12*f)*wsc),scl(bs,s*.04*wsc))));
+        const tp=brk?tB:mix(tF,tO,open);
+        if(brk)tp[1]=Math.max(tp[1],.05);              // dead fingertips drag, not clip
+        S(w,tp,.024*wsc,.006*wsc,2,soft,wTag);
+        tips.push(tp);
       }
+      // membrane: chords web the finger gaps and sweep to the flank, sagging
+      // on the upstroke (billow). A broken wing keeps every other chord — rags.
+      const flank=add(mix(st.chest,st.hip,.5),add(scl(bs,s*P.hipR*rs*.55),scl(bu,P.hipR*rs*.05)));
+      const bil=(.02+.11*Math.max(0,-Math.sin(fl-.4)))*open+(brk?.05:0);
+      const nCh=HIDEF?3:2;
+      for(let c2=1;c2<=nCh;c2++){
+        const u=c2/(nCh+.35);
+        if(brk&&(c2&1))continue;
+        const sag=scl(bu,-bil*(.4+.6*u));
+        const A=add(mix(w,tips[0],u),sag), B=add(mix(w,tips[1],u*.96),sag);
+        const C=add(mix(brk?w:flank,tips[2],u*.9),sag);
+        const mr=.020*wsc*(1-.35*u);
+        S(A,B,mr,mr*.7,memMat,soft,wTag);
+        S(B,C,mr*.8,mr*.55,memMat,soft,wTag);
+      }
+      S(tips[2],brk?add(w,scl(bu,-.16*wsc)):flank,.016*wsc,.030*wsc,memMat,soft,wTag); // trailing edge
     }
   }
 
@@ -1018,10 +1075,6 @@ function buildSkeleton(cr,dt){
     const er=Math.max(P.headR*(P.mode==='spider'?.42:.3)*st.eyeScale,.012);
     S(e,e,er,er,4,hard,'head');
   }
-  if(P.teeth)for(let i=0;i<3;i++){
-    const b=add(head,add(scl(hf,P.headLen*(.14+.13*i)),scl(hu,-P.headR*rs*.40)));
-    S(b,add(b,add(scl(hu,-.065),scl(hf,.015))),.02,.004,7,hard,'head');
-  }
   if(st.hat){
     const b=add(head,scl(hu,P.headR*.85));
     const tip=add(b,scl(nrm(add(hu,scl(hf,.15))),.33));
@@ -1039,13 +1092,15 @@ const canvas=document.getElementById('gl');
 const gl=canvas.getContext('webgl2',{antialias:false,alpha:false});
 if(!gl){document.getElementById('fail').style.display='grid';throw new Error('no webgl2');}
 // material id rides in A.w as matId*2+radius (radius < 2 always). The detail
-// anatomy (muscle, claws, skull, plates) wants 136 capsules; GPUs with tight
-// fragment-uniform limits get the lean 96-cap body instead.
+// anatomy (muscle, claws, skull, plates, mouth, webbed wings) plus part-break
+// props wants 160 capsules; GPUs with tight fragment-uniform limits get the
+// lean 96-cap body instead. The march loop breaks at the live count, so the
+// larger constant costs upload size, not per-pixel time.
 const MAXV=gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)||256;
 const HIDEF=MAXV>=512;
 // 42 non-capsule vectors (camera/pal/spine/look/foot/hurt) + 2 margin; uA+uB
 // take 2 per capsule — derive the budget so the GLES3 224 minimum still links
-const MAXN=HIDEF?136:Math.min(96,(MAXV-44)>>1), NGRP=3;
+const MAXN=HIDEF?160:Math.min(96,(MAXV-44)>>1), NGRP=3;
 if(!HIDEF)for(const nm in PRESETS){const p=PRESETS[nm];
   delete p.muscle;delete p.brow;delete p.claws;delete p.plates;}
 
@@ -1348,6 +1403,7 @@ void main(){
     }
     else if(mi==5){base=uPal[po+4];shin=40.;spk=.5;}
     else if(mi==7){base=uPal[po+1]*1.08;shin=60.;spk=.8;}
+    else if(mi==8){base=vec3(.30,.085,.075);shin=26.;spk=.6;} // wet maw
     else {base=uPal[po+5];shin=40.;spk=.5;}
 
     // hit-part flash: struck zone lifts toward accent (~0.18s), stronger on head-crit
@@ -1788,10 +1844,10 @@ function genSpecies(){
   sp.lmTail=sp.tailMul>0?pick(['club','fan','band']):null; // weapon/sever target
   sp.lmBack=sp.density>1||rng()<.22;                 // dorsal plates for tanks / lucky roll
   // hitzones AFTER landmarks — MH zone mults; plated = plates or stone-hide
-  sp.hz={head:1.6,body:1,legs:1,tail:1.1,belly:1};   // default: head crit, tail mild
+  sp.hz={head:1.6,body:1,legs:1,tail:1.1,belly:1,wing:1.25}; // head crit, membranes soft
   const plated=!!sp.lmBack||sp.density>1;
   if(plated){
-    sp.hz={head:.7,body:.45,legs:1,tail:1.1,belly:1.35}; // bounce hide; soft seam is belly
+    sp.hz={head:.7,body:.45,legs:1,tail:1.1,belly:1.35,wing:1.25}; // plates never reach the webbing
     if(sp.density>1)sp.hz.legs=.6;                   // stone-hide: legs armored too
     sp.plated=true;
   }else if(rng()<.4){                                // ~40% soft-belly species
@@ -1838,10 +1894,11 @@ const AIP={                                    // species-derived combat profile
 const game={
   over:false,failed:false,faints:0,potions:3,potion:null,loot:[],carveNodes:[],props:null,
   telegraphing:false,
-  severed:false,crestBroken:false,tiredHurt:0,rage:0,time:0,hitStop:0,
+  severed:false,crestBroken:false,wingBroken:false,tiredHurt:0,rage:0,time:0,hitStop:0,
   parts:{tail:Math.round(100*SPECIES.scale*Math.max(SPECIES.tailMul,.6)),
          legs:Math.round(120*SPECIES.scale),
-         head:Math.round(160*SPECIES.scale)},
+         head:Math.round(160*SPECIES.scale),
+         wings:SPECIES.wings?Math.round(150*SPECIES.scale):0},
   ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,swoopCool:9,swooping:false,
       swoopT:0,dropSlam:false,stam:100,enraged:false,fled:false,tiredT:0,
       orbitDir:1,pounceCool:3,hopCool:2,moveMode:'close'},
@@ -1851,7 +1908,8 @@ const game={
   tiredSoftLog:false, // one-shot log when plated zones soften while tired
 };
 game.foot.fill(-99);
-game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head};
+game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head,
+              wings:game.parts.wings};
 
 function footSize(cr,mul=1){
   return Math.max(.11,cr.P.legR*cr.radScale*cr.scale*(cr.isPlayer?4:5)*mul);
@@ -1941,6 +1999,7 @@ function hzResolve(tag,pos){
   if(tag==='head'){zone='head';mult=hz.head;}
   else if(tag==='tail'){zone='tail';mult=hz.tail;}
   else if(tag&&tag.indexOf('leg')===0){zone='legs';mult=hz.legs;}
+  else if(tag&&tag.indexOf('wing')===0){zone='wings';mult=hz.wing||1.25;}
   else if(pos){ // body: belly if probe sits under chest→hip midline
     const ab=sub(boss.hip,boss.chest),l2=dot(ab,ab)||1e-6;
     const t=clamp(dot(sub(pos,boss.chest),ab)/l2,0,1);
@@ -1973,6 +2032,10 @@ function hitBoss(amt,tag,pos){
   if(!bounce)game.ai.stam-=3; // plated bounce: no stamina drain
   if(tag==='tail'&&!game.severed){game.parts.tail-=dmg;if(game.parts.tail<=0){partBreak=true;severTail();}}
   if(tag==='head'&&!game.crestBroken){game.parts.head-=dmg;if(game.parts.head<=0){partBreak=true;breakCrest();}}
+  if(tag&&tag.indexOf('wing')===0&&boss.wings&&!game.wingBroken){
+    game.parts.wings-=dmg;
+    if(game.parts.wings<=0){partBreak=true;breakWing(tag);}
+  }
   if(tag&&tag.indexOf('leg')===0&&game.parts.legs>0){
     game.parts.legs-=dmg;
     if(game.parts.legs<=0){
@@ -2172,6 +2235,29 @@ function breakCrest(){
   log('Its '+CREST_LABEL.toLowerCase()+(CREST_LABEL==='HORNS'?' shatter':' shatters')
       +' — the head is exposed!',true);
 }
+function breakWing(tag){
+  game.wingBroken=true; game.parts.wings=0;
+  boss.wingBroken=true; boss.brokenWingS=tag==='wing1'?-1:1;
+  const airborne=boss.air>.3||game.ai.swooping;
+  game.ai.swooping=false; game.ai.dropSlam=false; boss.flyOK=false;
+  // a scrap of torn webbing lands beside the flank
+  const side=nrm(cross(V(0,1,0),boss.fw));
+  const gp=add([boss.chest[0],0,boss.chest[2]],
+    scl(side,boss.brokenWingS*(boss.P.chestR*boss.scale+1.2)));
+  const mm=boss.P.flameWings?6:2;
+  addProp({soft:[
+      [[gp[0]-.32,.05,gp[2]-.06],[gp[0]+.26,.08,gp[2]+.22],.15,.02,mm,'prop'],
+      [[gp[0]-.02,.04,gp[2]+.26],[gp[0]+.30,.05,gp[2]-.18],.09,.014,mm,'prop'],
+    ],
+    hard:[[add(gp,V(0,.18,0)),add(gp,V(0,.181,0)),.07,.07,5,'prop']], // carve beacon
+    center:[...gp],k:.05});
+  game.carveNodes.push({pos:[...gp],uses:1,loot:[BN.toUpperCase()+' WING WEBBING']});
+  dmgNum(add(boss.chest,V(0,.4,0)),'BROKEN!','big'); sfx.sever(); cam.shake=Math.max(cam.shake,.55);
+  if(airborne){
+    tired(); game.ai.tiredT=4.2;  // knocked out of the sky — a crash-landing opening
+    log('Its wing collapses mid-flight — it crashes down!',true);
+  }else log('Its wing crumples — it can no longer fly!',true);
+}
 
 // ---------- boss AI: patrol → hunt → enrage → tired → flee → dead ----------
 function aggro(){
@@ -2208,7 +2294,7 @@ function flee(){
   const ai=game.ai;
   if(ai.fled||boss.dead)return;
   ai.fled=true; ai.state='flee'; boss.restOn=false; boss.pantTgt=0;
-  ai.swooping=false; boss.flyOK=boss.wings; // winged species fly to safety
+  ai.swooping=false; boss.flyOK=boss.wings&&!boss.wingBroken; // fly to safety — if the wings still work
   if(ai.enraged)deEnrage();
   // retreat to the arena-edge point farthest from the hunter
   let bestT=V(9.5,0,0), bestD=-1;
@@ -2339,7 +2425,7 @@ function bossAI(dt){
     }else if((eN||!HAS_TAIL)&&dist<5.5&&ai.slamCool<=0){
       ai.slamCool=HAS_TAIL?12:8; ai.stam-=18;
       boss._slam=true; startAction(boss,'jump');
-    }else if(boss.wings&&dist>5&&ai.swoopCool<=0){
+    }else if(boss.wings&&!boss.wingBroken&&dist>5&&ai.swoopCool<=0){
       ai.swoopCool=14; ai.stam-=20;
       ai.swooping=true; ai.swoopT=0; boss.flyOK=true;
       log('It takes to the air!',true);
@@ -2446,6 +2532,8 @@ function hudTick(){
       return '▓'.repeat(n)+'░'.repeat(4-n);};
     const row=[game.crestBroken?'<b>'+CREST_LABEL+' ✕</b>'
                                :CREST_LABEL+' '+bar(game.parts.head,game.partMax.head)];
+    if(SPECIES.wings)row.push(game.wingBroken?'<b>WINGS ✕</b>'
+                                             :'WINGS '+bar(game.parts.wings,game.partMax.wings));
     if(HAS_TAIL)row.push(game.severed?'<b>TAIL ✕</b>'
                                      :'TAIL '+bar(game.parts.tail,game.partMax.tail));
     row.push(boss.limpLeg>=0?'<b>LEGS ✕</b>':'LEGS '+bar(game.parts.legs,game.partMax.legs));
@@ -2476,7 +2564,7 @@ addEventListener('resize',resize);
 const palBuf=new Float32Array(36), spineBuf=new Float32Array(16);
 { // quest intro: the body plan is the briefing
   const tells=[];
-  if(SPECIES.wings)tells.push('WINGS — IT WILL DIVE FROM ABOVE');
+  if(SPECIES.wings)tells.push('WINGS — IT DIVES FROM ABOVE. BREAK THEM TO GROUND IT');
   if(!HAS_TAIL)tells.push('NO TAIL — EXPECT GROUND SLAMS');
   else if(SPECIES.tailMul>1.15)tells.push('LONG TAIL — NEVER LINGER AT ITS FLANK');
   if(SPECIES.pairs>=3)tells.push('MANY LEGS — FAST, SKITTERY CHARGES');
