@@ -1080,6 +1080,7 @@ uniform vec4 uSpine[4];        // [chest.xyz,skinFreq][hip.xyz,0] per creature
 uniform vec4 uLook[2];         // [gaze.xyz,0] per creature · living eyes
 uniform vec4 uFoot[8],uHurt;   // x,z,time,size footprints · tail/leg damage · z=stone-hide
 uniform vec4 uHitFlash;        // x=zone(0none 1head 2body 3tail 4leg) y=age0..1 z=crit w=bounce/tink
+uniform float uPix;            // 0=off · N=posterize levels (pixel mode)
 
 // ---- procedural skin: hash noise, cellular plates, wrinkle bump ----
 float hash1(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
@@ -1382,7 +1383,15 @@ void main(){
   col*=.70;
   col=(col*(2.51*col+.03))/(col*(2.43*col+.59)+.14);
   col=pow(clamp(col,0.,1.),vec3(.4545));
-  col*=1.-.22*pow(length(ndc*vec2(.62,.9)),3.);      // vignette
+  if(uPix>0.){
+    // vignette before quant so big pixels stay flat (not a smooth gradient)
+    col*=1.-.22*pow(length(ndc*vec2(.62,.9)),3.);
+    const int B[16]=int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);
+    int xi=int(mod(gl_FragCoord.x,4.)),yi=int(mod(gl_FragCoord.y,4.));
+    float bayer=(float(B[yi*4+xi])+.5)/16.;
+    // round + damped dither: flats stay flat, only band seams break up
+    col=floor(clamp(col,0.,1.)*(uPix-1.)+.5+(bayer-.5)*.6)/(uPix-1.);
+  }else col*=1.-.22*pow(length(ndc*vec2(.62,.9)),3.);      // vignette
   O=vec4(col,1.);
 }`;
 
@@ -1404,7 +1413,7 @@ try{prog=makeProg(VS,FS);}catch(e){
 gl.useProgram(prog);
 const U={};
 for(const n of['uRes','uTime','uTanF','uMark','uRage','uCamPos','uSun','uMarkPos','uSlam','uFoot','uHurt',
-  'uHitFlash','uCamRot','uA','uB','uGrpA','uGrpB','uPal','uSpine','uLook'])
+  'uHitFlash','uCamRot','uA','uB','uGrpA','uGrpB','uPal','uSpine','uLook','uPix'])
   U[n]=gl.getUniformLocation(prog,n);
 const SUN=nrm(V(-.45,.62,-.38));
 
@@ -1543,6 +1552,8 @@ addEventListener('keydown',e=>{
   else if(k==='q')startPotion();
   else if(k==='e')tryCarve();
   else if(k==='m'){muted=!muted;log(muted?'MUTED':'SOUND ON');}
+  else if(k==='p'){pixelMode=!pixelMode;canvas.style.imageRendering=pixelMode?'pixelated':'';
+    log(pixelMode?'PIXEL MODE ON':'PIXEL MODE OFF',true);resize();}
   else if(k==='r'&&(game.failed||game.over)){if(typeof location!=='undefined')location.reload();}
 });
 addEventListener('keyup',e=>keys.delete(e.key===' '?'space':e.key.toLowerCase()));
@@ -1715,6 +1726,11 @@ const SEED=(()=>{
   if(typeof __TEST_SEED!=='undefined')return __TEST_SEED;
   try{const m=/[?&]seed=(\d+)/.exec(location.search);if(m)return +m[1];}catch(e){}
   return Math.floor(Math.random()*1e9);
+})();
+// pixel mode: ?pixel=1 on load · P toggles at runtime (presentation only)
+let pixelMode=(()=>{
+  try{const m=/[?&]pixel=1(?:&|$)/.exec(location.search);if(m)return true;}catch(e){}
+  return false;
 })();
 const rng=mulberry32(SEED);
 const pick=arr=>arr[Math.floor(rng()*arr.length)];
@@ -2352,9 +2368,18 @@ function hudTick(){
 let quality=Math.min(devicePixelRatio||1,1.5),emaMs=14;
 const qBase=Math.min(devicePixelRatio||1,1.5),qHi=Math.min((devicePixelRatio||1)*1.5,2.25);
 function resize(){
-  const w=Math.round(innerWidth*quality),hh=Math.round(innerHeight*quality);
-  if(canvas.width!==w||canvas.height!==hh){canvas.width=w;canvas.height=hh;
-    gl.viewport(0,0,w,hh);}
+  // pixel mode: fixed 180px-tall backing store, nearest upscale via CSS
+  if(pixelMode){
+    const hh=180,w=Math.max(1,Math.round(innerWidth/innerHeight*180));
+    if(canvas.width!==w||canvas.height!==hh){canvas.width=w;canvas.height=hh;
+      gl.viewport(0,0,w,hh);}
+    canvas.style.imageRendering='pixelated';
+  }else{
+    const w=Math.round(innerWidth*quality),hh=Math.round(innerHeight*quality);
+    if(canvas.width!==w||canvas.height!==hh){canvas.width=w;canvas.height=hh;
+      gl.viewport(0,0,w,hh);}
+    canvas.style.imageRendering='';
+  }
 }
 addEventListener('resize',resize);
 
@@ -2385,10 +2410,13 @@ function frame(now){
   requestAnimationFrame(frame);
   let dt=Math.max(Math.min((now-last)/1000,1/20),1e-4); last=now;
   if(game.hitStop>0){game.hitStop=Math.max(0,game.hitStop-dt);dt*=.12;} // impact freeze
-  emaMs=emaMs*.95+(now-(frame._p||now))*.05; frame._p=now;
-  if(emaMs>22&&quality>.5){quality=Math.max(.5,quality*.92);resize();} // drop fast
-  else if(emaMs<11&&quality<qBase){quality=Math.min(quality*1.03,qBase);resize();}
-  else if(emaMs<8.5&&quality<qHi){quality=Math.min(quality*1.015,qHi);resize();} // SS headroom
+  emaMs=emaMs*.95+(now-(frame._p||now))*.05; frame._p=now; // EMA stays live in pixel mode
+  // pixel mode holds a fixed low-res buffer — skip the adaptive quality ladder
+  if(!pixelMode){
+    if(emaMs>22&&quality>.5){quality=Math.max(.5,quality*.92);resize();} // drop fast
+    else if(emaMs<11&&quality<qBase){quality=Math.min(quality*1.03,qBase);resize();}
+    else if(emaMs<8.5&&quality<qHi){quality=Math.min(quality*1.015,qHi);resize();} // SS headroom
+  }
   resize();
   game.time+=dt;
 
@@ -2423,6 +2451,7 @@ function frame(now){
   gl.uniform1f(U.uTanF,cam.tanF);
   gl.uniform1f(U.uMark,game.mark.amp*(.75+.25*Math.sin(game.time*5)));
   gl.uniform1f(U.uRage,game.rage);
+  gl.uniform1f(U.uPix,pixelMode?8:0);
   gl.uniform3f(U.uCamPos,...cam.pos);
   gl.uniform3f(U.uSun,...SUN);
   gl.uniform3f(U.uMarkPos,...game.mark.pos);
