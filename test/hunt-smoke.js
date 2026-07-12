@@ -71,7 +71,12 @@ vm.runInContext(`
       '| player hp:' + player.hp, '| faints:', game.faints);
   }
 
-  // 1. patrol phase — player far away
+  // 1. patrol phase — player far away. Park beyond max wander reach: the boss
+  // roams up to ~5.5u from home, and aggro range is 7.5 — the spawn point left
+  // too little margin (a max-radius wander roll could aggro spontaneously).
+  player.leader = [0, player.P.chestH, 11.5];
+  player.sodChest.reset(player.leader);
+  player.target = [0, 0, 11.5];
   __drive(240); __checkFinite('patrol');
   if (game.ai.state !== 'patrol') throw new Error('boss should still patrol, got ' + game.ai.state);
 
@@ -94,12 +99,37 @@ vm.runInContext(`
   if (boss.hp >= boss.maxHp) throw new Error('player attacks never connected');
 
   // 3b. combo buffering: click mid-strike chains to stage 2
+  // parked away from the boss with topped-up HP: buffering must not depend on
+  // stochastic boss AI — a lucky bite could faint the player and swallow clicks
+  player.hp = player.maxHp;
+  player.leader = [boss.leader[0] + 9, player.P.chestH, boss.leader[2]];
+  player.sodChest.reset(player.leader);
+  player.target = [player.leader[0], 0, player.leader[2]];
   __drive(60); // let any current strike finish
   playerAttack(); __drive(10);           // stage 0, past wind-up
   playerAttack();                        // buffer stage 1
   __drive(40);
   if (player._comboN !== 1) throw new Error('combo did not chain: ' + player._comboN);
   __drive(60); __checkFinite('combo');
+
+  // 3c. leap: force a pounce, confirm liftoff and a clean landing.
+  // Ground the boss first — the movement brain may have it mid-jump/mid-swoop,
+  // and startLeap (correctly) refuses while airborne.
+  __drive(30);
+  boss.act = null; boss.restOn = false;
+  boss.jumpY = 0; boss.jumpVy = 0; boss.air = 0; boss.flyOK = false;
+  boss._slam = false; boss._leapLand = false;
+  game.ai.swooping = false; game.ai.dropSlam = false;
+  if (!startLeap(boss, player.leader, { dmg: 5 })) throw new Error('leap did not start');
+  let rose = false, landed = false;
+  for (let i = 0; i < 160 && !landed; i++) {
+    __drive(1);
+    if (boss.jumpY > 0.2) rose = true;
+    if (rose && boss.jumpY === 0) landed = true;
+  }
+  if (!rose) throw new Error('leap never left the ground');
+  if (!landed) throw new Error('leap never landed');
+  __checkFinite('leap');
 
   // 4. enrage at 50%
   boss.hp = boss.maxHp * 0.5 + 5;

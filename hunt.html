@@ -237,11 +237,12 @@ function makeCreature(name,opts={}){
   if(opts.speed)P.speed*=opts.speed;
   const pos=opts.pos||V(0,0,0);
   const cr={
-    P, name, scale:opts.scale||1, isPlayer:!!opts.isPlayer,
+    P, name, scale:opts.scale||1, isPlayer:!!opts.isPlayer, density:opts.density||1,
     leader:[pos[0],P.chestH,pos[2]], vel:V(), target:[pos[0],0,pos[2]], home:[pos[0],0,pos[2]],
     chest:null, hip:V(-1,0,0), phase:0, speedN:0,
     roll:0, rollKick:0, lookKick:0, yaw:0, yawRate:0, support:0, bobY:0, bobV:0,
     pant:0, pantTgt:0, breathPhase:Math.random()*Math.PI*2,
+    urge:.6, gait:.6,                       // locomotion intent: stalk 0 … sprint 1
     legs:[], tail:[], antTips:[],
     sodChest:null, sodLook:null,
     nextThink:0, idleLook:0,
@@ -272,6 +273,9 @@ function makeCreature(name,opts={}){
   return cr;
 }
 function setDyn(cr,f,z,r){cr.sodChest.set(f,z,r);cr.sodLook.set(f*1.2,z,r);}
+// mass ∝ volume × girth × hide density — one number drives inertia, knockback
+// resistance, flinch damping, fall weight and who yields in a body check
+const massOf=cr=>cr.scale*cr.scale*cr.scale*cr.radScale*cr.density;
 
 // ---------- Phase IV: limb solvers ----------
 // two-bone analytic IK; `pole` says which way the joint vertex points
@@ -344,15 +348,25 @@ function simulate(cr,dt){
     }else if(st.act==='jump'){
       st.crouch=Math.min(q/.14,1);                               // squash before…
       if(q>=.14){st.act=null;if(st.jumpY<=0)st.jumpVy=3.4;}      // …launch
+    }else if(st.act==='leap'){
+      const pf=st.actProf;
+      st.crouch=Math.max(st.crouch,Math.min(q/pf.wind,1)*.9);    // deep gather — the tell
+      if(q>=pf.wind&&st.jumpY<=0){
+        st.act=null; st.jumpVy=pf.vy;
+        st.imp=add(st.imp,scl(pf.dir,pf.pow));
+        st._leapDmg=pf.dmg||0; st._leapLand=true;                // armed until touchdown
+      }
     }
   }else st.jawEnv*=Math.exp(-9*dt);
   st.jawEnv=Math.max(st.jawEnv,.3*st.pant); // tired mouths never quite close
   st.crouch*=Math.exp(-6*dt);
   st.imp=scl(st.imp,Math.exp(-5.5*dt));
   if(st.jumpVy!==0||st.jumpY>0){                                 // ballistic arc
-    st.jumpVy-=9.5*dt; st.jumpY+=st.jumpVy*dt;
+    const grav=9.5*(st.jumpVy<0?1+.05*Math.min(massOf(st),8):1); // heavy falls hard
+    st.jumpVy-=grav*dt; st.jumpY+=st.jumpVy*dt;
     if(st.jumpY<=0){st.jumpY=0;st.jumpVy=0;st.crouch=Math.max(st.crouch,.8);
-      if(st._slam){st._slam=false;onSlam(st);}}
+      if(st._slam){st._slam=false;onSlam(st);}
+      if(st._leapLand){st._leapLand=false;onLeapLand(st,st._leapDmg);st._leapDmg=0;}}
   }
   st.rest+=((st.restOn?1:0)-st.rest)*Math.min(1,dt*2.2);
 
@@ -365,9 +379,19 @@ function simulate(cr,dt){
   const dist=len(toT);
   // winged creatures take off for far calls, land near them
   st.air+=(((st.wings&&st.flyOK&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
-  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95)*(st.dead?0:1);
+  // organic pacing: the AI sets urgency, it eases through the gait filter,
+  // surges rhythmically at full sprint, and every creature brakes into sharp
+  // turns — constant cruise speed is what made pursuit read as robotic
+  st.gait+=(st.urge-st.gait)*(1-Math.exp(-2.5*dt));
+  const spdMul=st.isPlayer?1:(.42+.9*st.gait)
+    *(1+(st.gait>.85?.3*Math.max(0,Math.sin(t*2.2+st.breathPhase)):0))
+    /(1+Math.abs(st.yawRate)*.22);
+  const maxSpd=P.speed*spdMul*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95)*(st.dead?0:1);
   const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*1.8)):V();
-  const k=1-Math.exp(-(st.isPlayer?7:4)*dt); // the hunter turns on a dime
+  // inertia: acceleration falls with mass — the hunter still turns on a dime,
+  // a stone-hide titan starts and stops like freight
+  const agil=(st.isPlayer?7:4)/Math.pow(Math.max(massOf(st),1),.32);
+  const k=1-Math.exp(-agil*dt);
   st.vel=mix(st.vel,desired,k);
   st.leader=add(st.leader,scl(add(st.vel,st.imp),dt));
   // arena bounds + boulder push-out
@@ -410,9 +434,15 @@ function simulate(cr,dt){
 
   // --- free-roam brain (patrol wander near home; off for the player) ---
   if(st.roam&&!st.restOn&&dist<.5&&t>st.nextThink){
-    if(Math.random()<.6){
+    const r0=Math.random();
+    if(r0<.14&&massOf(st)<3.5&&!st.act){       // light species bound about at play —
+      const a=Math.random()*6.283;             // anchored to home turf so they don't drift
+      startLeap(st,add(st.home,[Math.cos(a)*2.5,0,Math.sin(a)*2.5]),{vy:2.9});
+      st.nextThink=t+1;
+    }else if(r0<.65){
       const a=Math.random()*6.283, r=1.2+Math.random()*4;
       st.target=[st.home[0]+Math.cos(a)*r,0,st.home[2]+Math.sin(a)*r];
+      st.urge=.3+Math.random()*.5;             // amble, mosey, or trot over
       st.nextThink=t+.5;
     }else st.nextThink=t+1.5+Math.random()*2.5;
   }
@@ -502,16 +532,25 @@ function simulate(cr,dt){
     }
     const limp=st.legs.indexOf(leg)===st.limpLeg; // wounded leg drags
     if(leg.stepping){
-      leg.t+=dt/(P.stepDur*(limp?1.7:1));
+      leg.t+=dt/(P.stepDur*(limp?1.7:1)*(1.08-.28*st.speedN)); // quicker turnover at speed
       const e=leg.t>=1?1:leg.t*leg.t*(3-2*leg.t);
       leg.foot=mix(leg.from,leg.to,e);
-      leg.foot[1]=restY+Math.sin(Math.PI*Math.min(leg.t,1))*P.stepH*ls*(limp?.25:1);
+      leg.foot[1]=restY+Math.sin(Math.PI*Math.min(leg.t,1))*P.stepH*ls*(limp?.25:1)
+                 *(.8+.45*st.speedN);                          // feet lift higher at a run
       if(leg.t>=1){
         const stepD=Math.hypot(leg.to[0]-leg.from[0],leg.to[2]-leg.from[2]);
         const thud=P.bob*(11+8*clamp(stepD/Math.max(P.stride,1e-4),0,2))*(.55+.45*st.speedN);
         st.bobV=clamp(st.bobV-thud,-P.bob*30,P.bob*30);
         leg.stepping=false;leg.foot=[...leg.to];leg.plantYaw=yaw;leg.cool=.06;
         pushFootfall(st,leg.foot);
+        if(!st.isPlayer){ // tonnage telegraphs: heavy steps rumble the camera nearby
+          const m=massOf(st);
+          if(m>2.2){
+            const dd=Math.hypot(player.leader[0]-st.leader[0],player.leader[2]-st.leader[2]);
+            cam.shake=Math.max(cam.shake,Math.min((m-2.2)*.014,.12)*clamp(1-dd/13,.2,1));
+            if(m>4&&dd<9)noiseHit(.09,Math.min(.04+m*.011,.20),150); // subsonic thump
+          }
+        }
       }
     }else{
       leg.cool-=dt;
@@ -1239,6 +1278,20 @@ function startStrike(cr,prof){
   cr.act='strike'; cr.actT=0; cr._struck=false;
   cr.actProf=prof;
 }
+// leap: crouch-gather → ballistic spring at a point. Distance sets the launch
+// power (imp decays at 5.5/s, so pow≈L·3.2 lands near the mark); mass sets the
+// gather time — heavy bodies coil longer, which IS the readable tell
+function startLeap(cr,aim,opts={}){
+  if(cr.dead||cr.act||cr.jumpY>0||cr.air>.05)return false; // grounded only — no glide-pounce
+  cr.restOn=false;
+  const d=sub(aim,cr.leader); d[1]=0; const L=len(d)||1e-6;
+  cr.act='leap'; cr.actT=0;
+  cr.actProf={wind:opts.wind??(.24+.05*Math.min(massOf(cr),6)),
+    dir:scl(d,1/L), vy:opts.vy??(3.1+.5*Math.min(L/5,1)),
+    pow:opts.pow??clamp(L*3.8,4,23), dmg:opts.dmg||0};
+  cr.target=[aim[0],0,aim[2]]; // steering assists the flight instead of fighting it
+  return true;
+}
 function playerAttack(){
   if(player.dead||game.carving)return;
   if(player.act==='strike'){
@@ -1435,6 +1488,10 @@ function genSpecies(){
   const B=['khan','gante','dros','maw','vore','zuul','garu','loth','ryu','thax'];
   sp.short=pick(A)+pick(B);
   sp.name=(pick(EP)+' '+sp.short).toUpperCase();
+  // density rolls LAST: "SPECIES #seed" is shareable identity, and drawing here
+  // keeps every pre-density seed's rng stream — and thus its monster — intact
+  sp.density=rng()<.28?rr_(1.45,2.0):rr_(.75,1.15); // stone-hide roll: dense builds shrug hits
+  sp.speedMul*=1-.16*Math.max(sp.density-1,0);      // dense hide is a burden to haul
   return sp;
 }
 
@@ -1444,7 +1501,7 @@ const player=makeCreature('beast',{isPlayer:true,pos:V(0,0,9),hp:100,pal:'ember'
 const boss=makeCreature(SPECIES.base,{pos:V(0,0,-3),hp:SPECIES.hp,pal:SPECIES.pal,
   scale:SPECIES.scale,speed:SPECIES.speedMul});
 boss.roam=true; boss.flyOK=false;              // wings only when the AI commits to a dive
-boss.radScale=SPECIES.bulk; boss.legScale=SPECIES.legScale;
+boss.radScale=SPECIES.bulk; boss.legScale=SPECIES.legScale; boss.density=SPECIES.density;
 boss.posture=SPECIES.posture; boss.wings=SPECIES.wings; boss.spikes=SPECIES.spikes;
 if(SPECIES.pairs!==boss.P.pairs)buildLegs(boss,SPECIES.pairs);
 if(SPECIES.tailMul===0){boss.P.tailN=0;boss.tail.length=0;}
@@ -1468,7 +1525,8 @@ const game={
   parts:{tail:Math.round(100*SPECIES.scale*Math.max(SPECIES.tailMul,.6)),
          legs:Math.round(120*SPECIES.scale)},
   ai:{state:'patrol',atkCool:1.5,chargeCool:6,slamCool:10,swoopCool:9,swooping:false,
-      swoopT:0,dropSlam:false,stam:100,enraged:false,fled:false,tiredT:0},
+      swoopT:0,dropSlam:false,stam:100,enraged:false,fled:false,tiredT:0,
+      orbitDir:1,pounceCool:3,hopCool:2,moveMode:'close'},
   slam:[0,0,-99,0],mark:{pos:V(0,0,0),amp:0},carving:null,
   foot:new Float32Array(8*4),footHead:0,partMax:null,hitN:0,
 };
@@ -1487,6 +1545,49 @@ function kickChest(cr,dir,mag){
   if(dl<1e-5)return;
   cr.sodChest.yd[0]=clamp(cr.sodChest.yd[0]+d[0]/dl*mag,-3,3); // combo stacking during
   cr.sodChest.yd[2]=clamp(cr.sodChest.yd[2]+d[2]/dl*mag,-3,3); // hitStop stays bounded
+}
+
+// ---------- solid bodies: the torso is a wall, mass decides who yields ----------
+// boss torso = chest→hip capsule in plan view, hunter = circle; overlap is
+// resolved by mass share, so shoulder-checking six tons mostly moves you
+function resolveBodies(){
+  if(player.dead||boss.air>.45)return;         // a diving monster passes overhead
+  if(boss.jumpY>.35)return;                    // …and a pouncing one can't shove from the air
+  const rP=player.P.chestR*player.radScale+.05;
+  const rB=Math.max(boss.P.chestR,boss.P.hipR)*boss.radScale+.05;
+  if(player.jumpY>boss.chest[1]+rB*.6)return;  // vault must clear the body's back, not its midline
+  const abx=boss.hip[0]-boss.chest[0], abz=boss.hip[2]-boss.chest[2];
+  const apx=player.leader[0]-boss.chest[0], apz=player.leader[2]-boss.chest[2];
+  const tt=clamp((apx*abx+apz*abz)/(abx*abx+abz*abz||1e-6),0,1);
+  let dx=apx-abx*tt, dz=apz-abz*tt;
+  let d=Math.hypot(dx,dz);
+  if(d>=rP+rB)return;
+  // per-step cap: deep overlaps (landing on a slumped corpse) ease out over a
+  // few frames instead of popping a full body-width at once. Penetration uses
+  // the TRUE distance — computing it after the dead-center normal fixup made
+  // push go negative (rP+rB<1) and suck the player inward
+  const push=Math.min(rP+rB-d,.15);
+  if(d<1e-4){dx=1;dz=0;d=1;}                   // dead-center: arbitrary unit normal
+  const nx=dx/d, nz=dz/d;
+  const mP=massOf(player), mB=massOf(boss)*(boss.dead?50:1); // a carcass doesn't slide
+  const wP=mB/(mP+mB), wB=1-wP;
+  let ppx=nx*push*wP, ppz=nz*push*wP;
+  // wall pin: pushing into the arena rim would be cancelled by simulate's clamp
+  // every frame (stable overlap) — slide along the rim tangent instead
+  if(Math.hypot(player.leader[0]+ppx,player.leader[2]+ppz)>ARENA_R-.6){
+    const tx=-nz, tz=nx, s=Math.sign(tx*player.vel[0]+tz*player.vel[2])||1;
+    ppx=tx*s*push*wP; ppz=tz*s*push*wP;
+  }
+  player.leader[0]+=ppx;      player.leader[2]+=ppz;
+  boss.leader[0]-=nx*push*wB; boss.leader[2]-=nz*push*wB;
+  // momentum trade along the contact normal — the lunge channel (imp) counts too,
+  // else a charge keeps burrowing faster than the capped push can resolve
+  const vn=(player.vel[0]+player.imp[0]-boss.vel[0]-boss.imp[0])*nx
+          +(player.vel[2]+player.imp[2]-boss.vel[2]-boss.imp[2])*nz;
+  if(vn<0){
+    player.vel[0]-=vn*nx*wP; player.vel[2]-=vn*nz*wP;
+    boss.vel[0]+=vn*nx*wB;   boss.vel[2]+=vn*nz*wB;
+  }
 }
 
 // ---------- combat: the SDF IS the hitbox ----------
@@ -1534,8 +1635,9 @@ function hitBoss(amt,tag,pos){
   }
   dmgNum(pos,dmg,cls); sfx.hit(); cam.shake=Math.max(cam.shake,.12);
   game.hitStop=Math.max(game.hitStop,.045+dmg*.0007); // connect freeze — bigger hits bite harder
-  boss.imp=add(boss.imp,scl(nrm(sub(boss.leader,player.leader)),.5));
-  const kick=clamp(.12+(dmg/boss.maxHp)*(3.2+boss.scale*1.2)*boss.radScale,.15,.40);
+  boss.imp=add(boss.imp,scl(nrm(sub(boss.leader,player.leader)),.5/Math.pow(massOf(boss),.45)));
+  const kick=clamp(.12+(dmg/boss.maxHp)*(3.2+boss.scale*1.2)*boss.radScale,.15,.40)
+            /Math.pow(boss.density,.75); // stone-hide barely flinches, light frames rock
   kickChest(boss,hitAway,kick);                       // heavy mass recoils through the chest SOD
   const side=nrm(cross(V(0,1,0),boss.fw));
   const shake=(++game.hitN&1?1:-1)*(.12+kick*.7);
@@ -1557,7 +1659,8 @@ function hurtPlayer(amt,from){
   player.hp-=amt; flash(); sfx.hurt(); cam.shake=Math.max(cam.shake,.35);
   game.hitStop=Math.max(game.hitStop,.08);
   dmgNum(add(player.chest,V(0,.3,0)),amt,'hurt');
-  if(from){const kb=nrm(sub(player.leader,from));kb[1]=0;player.imp=add(player.imp,scl(kb,4.5));
+  if(from){const kb=nrm(sub(player.leader,from));kb[1]=0;
+    player.imp=add(player.imp,scl(kb,4.5*clamp(.8+.07*massOf(boss),.85,1.45))); // tonnage hits harder
     kickChest(player,kb,clamp(.055+amt/player.maxHp*.20,.06,.16));}
   player.iFrames=.5;
   if(player.hp<=0)faint();
@@ -1569,6 +1672,14 @@ function onSlam(cr){
   sfx.slam(); cam.shake=Math.max(cam.shake,.6);
   const dd=Math.hypot(player.leader[0]-cr.leader[0],player.leader[2]-cr.leader[2]);
   if(dd<3.4&&player.jumpY<.25)hurtPlayer(10+20*(1-dd/3.4),cr.leader);
+}
+function onLeapLand(cr,dmg){ // touchdown: dust, thud, and a pounce hit if armed
+  pushFootfall(cr,cr.leader,1.6);
+  cam.shake=Math.max(cam.shake,.10+.02*Math.min(massOf(cr),8));
+  noiseHit(.12,.28,300);
+  if(cr!==boss||player.dead||cr.dead)return; // a mid-air kill disarms the pounce
+  const dd=Math.hypot(player.leader[0]-cr.leader[0],player.leader[2]-cr.leader[2]);
+  if(dmg&&dd<2.0&&player.jumpY<.3)hurtPlayer(dmg,cr.leader);
 }
 function onRoar(cr){ // roar is a concussion — shoves the hunter back, no damage
   if(cr!==boss||player.dead)return;
@@ -1746,9 +1857,11 @@ function bossAI(dt){
   boss.pantTgt=ai.state==='tired'?1:0;
   const dvec=sub(player.leader,boss.leader); dvec[1]=0;
   const dist=len(dvec);
-  ai.atkCool-=dt; ai.chargeCool-=dt; ai.slamCool-=dt;
+  ai.atkCool-=dt; ai.chargeCool-=dt; ai.slamCool-=dt; ai.pounceCool-=dt; ai.hopCool-=dt;
   if(ai.state==='patrol'){ if(dist<7.5)aggro(); return; }
+  if(ai.state==='flee')boss.urge=1;          // flat-out limp for the exit
   if(ai.state==='tired'){
+    boss.urge=.2;
     ai.tiredT-=dt;
     if(ai.tiredT<=0||game.tiredHurt>70){
       boss.restOn=false; boss.pantTgt=0; ai.stam=70; game.tiredHurt=0; ai.state='hunt';
@@ -1777,8 +1890,25 @@ function bossAI(dt){
     else if(ai.swoopT>6){ai.swooping=false;boss.flyOK=false;} // give up the pass
     return;
   }
-  if(!boss.act&&!boss.restOn){
-    boss.target=[player.leader[0]+player.vel[0]*.25,0,player.leader[2]+player.vel[2]*.25];
+  if(!boss.act&&!boss.restOn&&boss.jumpY<=0){ // grounded: mid-flight keeps its committed target
+    const mB=massOf(boss), pp=[player.leader[0],0,player.leader[2]];
+    // movement brain: sprint the gap, arc onto a flank at mid-range, circle
+    // while attacks cool down — a predator prowls, it doesn't beeline
+    if(Math.random()<dt*.14)ai.orbitDir=-ai.orbitDir;
+    if(dist>7){ai.moveMode='close';boss.urge=1;}
+    else if(ai.atkCool>.7&&dist<4.6){ai.moveMode='circle';boss.urge=.42;}
+    else{ai.moveMode='close';boss.urge=dist>4?.85:.62;}
+    if(ai.moveMode==='circle'){
+      const a=Math.atan2(boss.leader[2]-pp[2],boss.leader[0]-pp[0])+ai.orbitDir*.7;
+      const r=2.9+.4*Math.sin(game.time*.53);
+      boss.target=[pp[0]+Math.cos(a)*r,0,pp[2]+Math.sin(a)*r];
+    }else{
+      boss.target=[pp[0]+player.vel[0]*.25,0,pp[2]+player.vel[2]*.25];
+      if(dist>3&&dist<8){
+        const sd=nrm(cross(V(0,1,0),[dvec[0],0,dvec[2]]));
+        boss.target=add(boss.target,scl(sd,ai.orbitDir*clamp(dist-2.5,0,3)*.30));
+      }
+    }
     const biteR=2.5*boss.scale;
     const rel=nrm([dvec[0],0,dvec[2]]);
     const cosA=dot([boss.fw[0],0,boss.fw[2]],rel); // where is the hunter, relative to its snout
@@ -1802,6 +1932,13 @@ function bossAI(dt){
       ai.swoopCool=14; ai.stam-=20;
       ai.swooping=true; ai.swoopT=0; boss.flyOK=true;
       log('It takes to the air!',true);
+    }else if(mB<5.5&&dist>2.6&&dist<6&&ai.pounceCool<=0&&ai.atkCool<=0){
+      // agile species pounce — stone-hides never leave the ground.
+      // costs commit only if the spring actually starts (can refuse mid-air)
+      if(startLeap(boss,add(pp,scl(player.vel,.55)),{dmg:Math.round(9+5*SPECIES.scale)})){
+        ai.pounceCool=(eN?4.5:7)+Math.random()*2; ai.atkCool=1.1; ai.stam-=14;
+        log('It springs!');
+      }else ai.pounceCool=.6;
     }else if(dist>4.5&&dist<11&&ai.chargeCool<=0){
       ai.chargeCool=eN?5:8; ai.stam-=15;
       boss._chargeHit=false;
@@ -1810,6 +1947,11 @@ function bossAI(dt){
         aim:()=>add(player.leader,scl(player.vel,.35))};
       log('It paws the ground…');
     }
+    // light species reset spacing with a backward hop when crowded — lowest
+    // priority (attacks won, act is set) and cooldown commits only on success
+    if(!boss.act&&mB<4.2&&dist<1.9&&ai.hopCool<=0&&Math.random()<dt*1.4&&
+       startLeap(boss,add(boss.leader,scl(nrm([-dvec[0],0,-dvec[2]]),2.6)),{vy:2.7}))
+      ai.hopCool=5.5;
   }
 }
 
@@ -1886,6 +2028,8 @@ const palBuf=new Float32Array(36), spineBuf=new Float32Array(16);
   if(SPECIES.pairs>=3)tells.push('MANY LEGS — FAST, SKITTERY CHARGES');
   if(SPECIES.bulk>1.12)tells.push('MASSIVE BUILD — SLOW, BUT IT ENDURES');
   if(SPECIES.snappy>.7)tells.push('TWITCHY — SHORT TELLS, STAY READY');
+  if(SPECIES.density>1.4)tells.push('STONE-HIDE — IT WILL NOT BE STAGGERED');
+  else if(SPECIES.density<.85)tells.push('LIGHT FRAME — YOUR HITS ROCK IT');
   banner('SLAY '+SPECIES.name,
     (tells.length?tells.join(' · '):'A BALANCED PREDATOR — READ IT AS YOU FIGHT'),5600);
   const q2=$('quest2');
@@ -1907,6 +2051,7 @@ function frame(now){
   if(!game.failed&&!game.over)bossAI(dt);
   const steps=dt>1/45?2:1;
   for(let i=0;i<steps;i++){
+    resolveBodies();
     buildSkeleton(player,dt/steps);
     buildSkeleton(boss,dt/steps);
   }

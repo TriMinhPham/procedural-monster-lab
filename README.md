@@ -30,6 +30,16 @@ slam, twitchy species telegraph less). The quest banner briefs the tells.
 - **Boss AI** rides the dynamics system: patrol → roar/aggro → bite, charge,
   jump-slam → **enrage** at 50% HP (f up, ζ down, eyes glow) → exhausted rest
   (free damage window) → flees at 20% to sleep it off → carve the corpse.
+- **Mass is real**: bodies are solid (mass-weighted push-out — shoulder-checking
+  six tons mostly moves *you*), and one mass number (scale³ × bulk × hide density)
+  drives inertia, knockback/flinch resistance, fall weight, and footfall rumble.
+  The species generator can roll a **stone-hide** — slow, unstaggerable, briefed
+  in the quest tells.
+- **Predators prowl, they don't beeline**: an urgency→gait layer makes the boss
+  stalk, circle while attacks cool down, arc onto flanks, surge into sprints,
+  and brake into turns; light species **pounce**, hop back to reset spacing, and
+  bound at play on patrol — stone-hides never leave the ground. Step height and
+  leg turnover follow speed.
 - Zero keyframes and zero assets throughout — even the sounds are synthesized.
 
 Smoke test: `node test/hunt-smoke.js` drives the whole quest headless.
