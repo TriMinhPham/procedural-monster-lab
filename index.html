@@ -91,6 +91,7 @@
     <button data-p="bug">BUG</button>
     <button data-p="rex">REX</button>
     <button data-p="wyvern">WYVERN</button>
+    <button data-p="rathalos">RATHALOS</button>
   </div>
 
   <div class="sect">ACTIONS · A ␣ D R</div>
@@ -232,6 +233,19 @@ const PRESETS={
     wings:true, wingScale:1.05,
     ears:false, antennae:false, palps:false, spikesDefault:true,
     dyn:[2.4,.6,1.1], pal:'dusk', k:.05
+  },
+  rathalos:{ // MH flying wyvern — King of the Skies: biped, broad wings, crimson shell
+    pairs:1, mode:'zigzag', soloU:.78,
+    bodyLen:1.22, chestH:.76, hipH:.74, chestR:.30, midR:.26, hipR:.28,
+    neckLen:.32, neckUp:.15, headR:.20, headLen:.56, snout:.62,
+    jaw:true, teeth:true,
+    crests:true, flameWings:true, tailClub:true,
+    lu:.44, ll:.40, fs:.30, legR:.078, stance:[.26], lead:[.10],
+    stepThresh:.40, stepDur:.18, stepH:.20, speed:2.15, stride:.90,
+    undulate:0, tailN:8, tailLen:1.65, bob:.04, post:.95,
+    wings:true, wingScale:1.85,
+    ears:false, antennae:false, palps:false, spikesDefault:true,
+    dyn:[2.0,.55,1.05], pal:'rathalos', k:.055
   }
 };
 
@@ -242,6 +256,7 @@ const PALETTES={
   tide :['#4f8fa8','#d8ead9','#35617e','#28405c','#e5975f','#efd9a0'],
   dusk :['#8a6fae','#e3d3e9','#5d4a85','#3d2f5c','#e8b04e','#f0e6d2'],
   fossil:['#7d6a47','#d3c497','#5d4e35','#3e3122','#4db8a8','#e8b04e'],
+  rathalos:['#c23a28','#ecd6a8','#8a2e24','#2a1612','#e8b04e','#f0a03a'],
 };
 const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
 
@@ -289,6 +304,7 @@ function initCreature(name){
   st.posture=P.post;
   if(name==='rex')cam.dist=Math.max(cam.dist,8.5);
   if(name==='wyvern')cam.dist=Math.max(cam.dist,7.5);
+  if(name==='rathalos')cam.dist=Math.max(cam.dist,9);
   dyn.f=P.dyn[0]; dyn.z=P.dyn[1]; dyn.r=P.dyn[2];
   syncUI();
 }
@@ -505,10 +521,27 @@ function buildSkeleton(dt){
     S(b,add(b,add(scl(hu,.16),add(scl(hs,s*.05),scl(hf,-.05)))),.05*rs,.012,1,soft);
   }
 
+  // crests — paired crown horns + nuchal spike
+  if(P.crests){
+    for(const s of[1,-1]){
+      const b0=add(head,add(scl(hf,P.headLen*.02),add(scl(hs,s*P.headR*.42),scl(hu,P.headR*.78))));
+      const t0=add(b0,add(scl(hf,-.20*rs),add(scl(hs,s*.06),scl(hu,.18*rs))));
+      S(b0,t0,P.headR*rs*.20,.006,3,soft);
+      const b1=add(head,add(scl(hf,-P.headLen*.12),add(scl(hs,s*P.headR*.38),scl(hu,P.headR*.62))));
+      const t1=add(b1,add(scl(hf,-.12*rs),add(scl(hs,s*.04),scl(hu,.12*rs))));
+      S(b1,t1,P.headR*rs*.14,.005,3,soft);
+    }
+    const nb=add(head,add(scl(hf,-P.headLen*.22),scl(hu,P.headR*.55)));
+    S(nb,add(nb,add(scl(hf,-.10*rs),scl(hu,.14*rs))),P.headR*rs*.16,.005,3,soft);
+  }
+
   // wings — flush along the body when folded, flapping limb-fan when open
   if(st.wings){
     const wsc=(P.wingScale||1)*(P.chestR/.22);
     const open=st.wOpen, fl=st.flap;
+    const nMem=P.flameWings?6:4;
+    const memMat=P.flameWings?6:2; // accent-toned membrane when fire-winged
+    const span=P.flameWings?1.12:1;
     for(const s of[1,-1]){
       const sh=add(st.chest,add(scl(side,s*P.chestR*rs*.7),V(0,P.chestR*rs*.4,0)));
       const F1=.35+Math.sin(fl)*.75, F2=.10+Math.sin(fl-.7)*.95;
@@ -516,18 +549,24 @@ function buildSkeleton(dt){
       const d2=add(scl(side,s*Math.cos(F2)),V(0,Math.sin(F2),0));
       const eO=add(sh,add(scl(d1,.34*wsc),scl(fw,-.04)));
       const wO=add(eO,add(scl(d2,.36*wsc),scl(fw,-.08)));
-      const tO=add(wO,add(scl(d2,.30*wsc),scl(fw,-.16)));
+      const tO=add(wO,add(scl(d2,.32*wsc*span),scl(fw,-.18*span)));
       const eF=add(sh,add(scl(fw,-.22*wsc),scl(side,s*.03)));
       const wF=add(eF,add(scl(fw,-.26*wsc),V(0,-.02,0)));
-      const tF=add(wF,scl(fw,-.24*wsc));
+      const tF=add(wF,scl(fw,-.24*wsc*span));
       const e=mix(eF,eO,open),w=mix(wF,wO,open),tp=mix(tF,tO,open);
       S(sh,e,.062*wsc,.048*wsc,2,soft);
       S(e,w,.048*wsc,.036*wsc,2,soft);
       S(w,tp,.036*wsc,.014*wsc,6,soft);
-      for(let m=0;m<4;m++){ // membrane struts fanning backward
-        const an=mix(e,tp,m/3);
-        const bk=add(scl(fw,-(.42-.08*m)*wsc),V(0,-.09*open,0));
-        S(an,add(an,bk),.032*wsc,.008,2,soft);
+      for(let m=0;m<nMem;m++){
+        const u=m/(nMem-1);
+        const an=mix(e,tp,u);
+        const bk=add(scl(fw,-(.48-.07*u)*wsc*span),V(0,-.10*open,0));
+        S(an,add(an,bk),.034*wsc*(1-.15*u),.008,memMat,soft);
+      }
+      if(P.flameWings){
+        S(tp,add(tp,add(scl(d2,.06*wsc),scl(fw,-.04))),.014*wsc,.004,3,hard);
+        const le=mix(sh,e,.55);
+        S(le,add(le,add(scl(d1,.05*wsc),V(0,.03,0))),.018*wsc,.004,3,hard);
       }
     }
   }
@@ -585,6 +624,21 @@ function buildSkeleton(dt){
       const r2=(P.hipR*.7)*(1-(i+1)/P.tailN)*rs+.012;
       S(prev,st.tail[i],r1,r2,1,soft);
       prev=st.tail[i];
+    }
+    if(P.tailClub&&P.tailN>=2){
+      const tip=st.tail[P.tailN-1], prevT=st.tail[P.tailN-2];
+      const td=nrm(sub(tip,prevT));
+      const tu=nrm(cross(side,td)), ts=nrm(cross(td,tu));
+      const bulbR=P.hipR*rs*.48;
+      const bulb=add(tip,scl(td,bulbR*.55));
+      S(tip,bulb,bulbR*.7,bulbR,1,soft);
+      S(bulb,bulb,bulbR*1.05,bulbR*1.05,1,soft);
+      for(let k=0;k<6;k++){
+        const a=(k/6)*Math.PI*2;
+        const d=nrm(add(scl(td,.28),add(scl(ts,Math.cos(a)*.85),scl(tu,Math.sin(a)*.85))));
+        const b=add(bulb,scl(d,bulbR*.55));
+        S(b,add(b,scl(d,bulbR*1.15)),bulbR*.38,.004,3,hard);
+      }
     }
   }
 

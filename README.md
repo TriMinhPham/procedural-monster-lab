@@ -88,8 +88,25 @@ Open `index.html` in any browser with WebGL2 — no build step, no dependencies.
 - **Click the ground** to call the monster somewhere — winged specimens **fly** to far calls
 - **A** attack · **space** jump · **D** dash · **R** rest (or use the panel buttons)
 - **Drag** to orbit, **scroll / pinch** to zoom
-- Panel: five specimens, dynamics tuning (f / ζ / r), morphs (leg length, plumpness,
+- Panel: specimens (skink · beast · bug · rex · wyvern · **rathalos** · drake in visual-lab),
+  dynamics tuning (f / ζ / r), morphs (leg length, plumpness,
   **leg pairs 1–4**, **posture** sprawl↔upright), dress-up (spikes, hat, **wings**)
+  — deep-link a specimen with `visual-lab.html?preset=rathalos`
+
+### Pocket monsters (visual-lab)
+
+The same primitives at chibi proportions — head half the body, eyes a third of
+the head, stubby bent legs, extra-bouncy dynamics, goopy smooth-min — plus the
+cel renderer, and the system speaks fluent Pokémon. Three original starters in
+`visual-lab.html` (they switch toon mode on when selected):
+
+| Sparky (electric) | Blaze (fire) | Sprout (grass) |
+|---|---|---|
+| ![sparky](docs/vl-sparky.png) | ![blaze](docs/vl-blaze.png) | ![sprout](docs/vl-sprout.png) |
+
+New cute-grammar knobs any preset can use: `eye` (scale), `earScale` +
+`earTip` (tall ink-dipped ears), `cheeks` (accent studs), `bulb` (seed bulb +
+leaf fan). `?preset=sparky`, `blaze`, `sprout` to deep-link.
 
 ## How it works
 
@@ -99,7 +116,8 @@ Built following "The Procedural Monster Manual" playbook:
   sprawled legs, the beast's 3-bone "Mammal Problem" zigzag (solved by IK-ing hip→ankle and
   hanging the metatarsal below), the bug's six spider legs / antennae / pedipalps, the
   **rex** (biped gait on one leg pair, tiny 2-bone arms, hinged jaw with teeth, counterweight
-  tail), and the **wyvern** (bird group: biped plus wings).
+  tail), the **wyvern** (bird group: biped plus wings), and **rathalos** (MH flying wyvern:
+  crimson plates, crown crests, flame-wing membranes, spiked tail club).
 - **Wings & flight** — wings fold flush along the body on the ground and flap open in the
   air, per the guide's bird-group note. Flight is a locomotion mode: far target → take off,
   climb to cruise height with a wingbeat heave, tuck the feet, and land near the call.
