@@ -361,7 +361,8 @@ const SG=(()=>{
   const d={seed:Math.floor(Math.random()*1e9),clears:{},times:{},
            inv:{scale:0,fang:0,plate:0,hide:0,relic:0},wTier:0,aTier:0};
   try{const s=JSON.parse(localStorage.getItem('huntsaga1'));
-    if(s&&s.seed)return Object.assign(d,s,{inv:Object.assign(d.inv,s.inv||{})});}catch(e){}
+    if(s&&s.seed)Object.assign(d,s,{inv:Object.assign(d.inv,s.inv||{})});}catch(e){}
+  d.wTier=Math.max(0,Math.min(4,d.wTier|0)); d.aTier=Math.max(0,Math.min(3,d.aTier|0));
   return d;
 })();
 function sgSave(){try{localStorage.setItem('huntsaga1',JSON.stringify(SG));}catch(e){}}
@@ -378,9 +379,11 @@ const BOARD_MODE=(()=>{
   return false; // headless tests: straight to the hunt
 })();
 function bankItem(s){
-  const c=/RARE/.test(s)?'relic':/SCALE/.test(s)?'scale':/FANG|HORN|CREST|SKULL/.test(s)?'fang'
-        :/PLATE/.test(s)?'plate':'hide';
+  // plates must outrank the RARE/SKULL words or the plate economy hard-locks
+  const c=/PLATE/.test(s)?'plate':/SCALE/.test(s)?'scale'
+        :/FANG|HORN|CREST/.test(s)?'fang':'hide';
   SG.inv[c]=(SG.inv[c]||0)+(+((/[×x](\d+)/.exec(s)||[])[1])||1);
+  if(/RARE/.test(s))SG.inv.relic=(SG.inv.relic||0)+1; // rarity is a bonus, not a class
   sgSave();
 }
 const clearCount=()=>QDEFS.filter(d=>!d.fable&&SG.clears[d.id]).length;
@@ -2107,8 +2110,9 @@ const MUSIC=(()=>{
   let motif=null;
   const hz=(d,oct=0,sc=major)=>root*Math.pow(2,(sc[((d%sc.length)+sc.length)%sc.length]+12*(Math.floor(d/sc.length)+oct))/12);
   const mkMotif=()=>{const r=mulberry32((SEED^0xBEEF)>>>0),m=[];for(let i=0;i<12;i++)m.push({d:Math.floor(r()*7)+(i&&r()<.28?-2:0),n:r()<.25?2:1});return m;};
-  function param(x,n,v,t){if(x&&x[n]&&x[n].setValueAtTime)x[n].setValueAtTime(v,t);else if(x)x[n]=v;}
-  function ramp(x,n,v,t){if(x&&x[n]&&x[n].linearRampToValueAtTime)x[n].linearRampToValueAtTime(v,t);else param(x,n,v,t);}
+  // every call site passes (AudioParam, value, time) — the params ARE the x
+  function param(p,v,t){if(!p)return;if(p.setValueAtTime)try{p.setValueAtTime(v,t);return;}catch(e){}try{p.value=v;}catch(e){}}
+  function ramp(p,v,t){if(!p)return;if(p.linearRampToValueAtTime)try{p.linearRampToValueAtTime(v,t);return;}catch(e){}param(p,v,t);}
   function clean(o){try{o.stop();}catch(e){}try{o.disconnect();}catch(e){}if(o._g)try{o._g.disconnect();}catch(e){}voices=voices.filter(v=>v!==o);}
   function voice(o,g,t){o._g=g;voices.push(o);o.onended=()=>clean(o);try{o.start(t);}catch(e){clean(o);}return o;}
   function gain(v,t,d){const g=AC.createGain();param(g.gain,v,t);ramp(g.gain,.001,t+d);return g;}
@@ -2299,7 +2303,7 @@ game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head,
     if(up)b.addEventListener('touchcancel',up);box.appendChild(b);};
   add('DASH',playerDash);add('JUMP',()=>startAction(player,'jump'));
   add('POTION',()=>{keys.add('q');startPotion();},()=>keys.delete('q'));
-  add('CARVE',tryCarve);document.body.appendChild(box);
+  add('CARVE',tryCarve);box.style.display='flex';document.body.appendChild(box);
 }
 /*PAD*/ setupTouchActions();
 
@@ -2839,6 +2843,7 @@ function bossAI(dt){
     ai.tiredT-=dt;
     if(ai.tiredT<=0||game.tiredHurt>70){
       boss.restOn=false; boss.pantTgt=0; ai.stam=70; game.tiredHurt=0; ai.state='hunt';
+      MUSIC.set(ai.enraged?'enrage':'battle'); /*MUSIC — waking from a flee-nap resumes the fight theme*/
       log('The '+BN+' rises again…');
     }
     return;

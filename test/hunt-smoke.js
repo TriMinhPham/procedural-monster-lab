@@ -572,9 +572,14 @@ vm.runInContext(`
   if (!read(fb, 'SPECIES.wings')) throw new Error('saga: fable must fly');
 
   // forge economy math
-  read(fb, 'bankItem("TEST SCALE ×2"); bankItem("TEST PLATE — RARE!"); bankItem("TEST FANG")');
-  if (read(fb, 'SG.inv.scale') !== 2 || read(fb, 'SG.inv.relic') !== 1 || read(fb, 'SG.inv.fang') !== 1)
+  read(fb, 'bankItem("TEST SCALE ×2"); bankItem("TEST PLATE — RARE!"); bankItem("TEST FANG"); bankItem("SKULL PLATE")');
+  // PLATE — RARE! banks a plate AND a relic; SKULL PLATE is a plate, not a fang
+  if (read(fb, 'SG.inv.scale') !== 2 || read(fb, 'SG.inv.relic') !== 1 ||
+      read(fb, 'SG.inv.fang') !== 1 || read(fb, 'SG.inv.plate') !== 2)
     throw new Error('saga: banking math ' + read(fb, 'JSON.stringify(SG.inv)'));
+  // every forge cost must be reachable from droppable material classes
+  if (!read(fb, 'WPN.concat(ARM).every(w=>!w.cost||Object.keys(w.cost).every(k=>SG.inv[k]!==undefined))'))
+    throw new Error('saga: forge cost references unknown material class');
   if (read(fb, 'canAfford({scale:3})') !== false) throw new Error('saga: canAfford false-positive');
   read(fb, 'SG.inv.scale=10');
   if (read(fb, 'canAfford({scale:4})') !== true) throw new Error('saga: canAfford false-negative');
