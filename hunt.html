@@ -20,11 +20,14 @@
   #gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;}
 
   .brand{position:fixed;left:20px;top:18px;pointer-events:none;user-select:none;}
-  .brand .t1{font-family:var(--mono);font-size:13px;letter-spacing:.28em;color:var(--ink);}
+  .brand .t1{font-family:var(--mono);font-size:13px;letter-spacing:.28em;color:var(--ink);
+    text-shadow:0 1px 4px rgba(0,0,0,.65);}
   .brand .t1 b{color:var(--amber);font-weight:600;}
-  .brand .t2{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--ink-dim);margin-top:6px;}
+  .brand .t2{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--ink-dim);margin-top:6px;
+    text-shadow:0 1px 4px rgba(0,0,0,.65);}
   .hints{position:fixed;left:20px;bottom:16px;font-family:var(--mono);font-size:10px;
-    letter-spacing:.1em;color:var(--ink-dim);pointer-events:none;user-select:none;}
+    letter-spacing:.1em;color:var(--ink-dim);pointer-events:none;user-select:none;
+    text-shadow:0 1px 4px rgba(0,0,0,.65);}
   .hints span{color:var(--ink);}
 
   /* ---------- hunt HUD ---------- */
@@ -55,8 +58,9 @@
     border:1px solid var(--amber-soft);border-radius:8px;padding:8px 16px;display:none;}
   #banner{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;display:none;}
   #banner .big{font-size:30px;letter-spacing:.34em;color:var(--amber);
-    text-shadow:0 2px 18px rgba(0,0,0,.6);}
-  #banner .sub{font-size:11px;letter-spacing:.18em;color:var(--ink);margin-top:10px;line-height:1.9;}
+    text-shadow:0 1px 3px rgba(0,0,0,.7),0 2px 18px rgba(0,0,0,.6);}
+  #banner .sub{font-size:11px;letter-spacing:.18em;color:var(--ink);margin-top:10px;line-height:1.9;
+    text-shadow:0 1px 3px rgba(0,0,0,.7);}
   .dmg{position:fixed;font-size:15px;font-weight:700;color:#f2d16b;
     text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;
     animation:dmgfloat .8s ease-out forwards;}
@@ -234,11 +238,82 @@ const PALETTES={
   fossil:['#7d6a47','#d3c497','#5d4e35','#3e3122','#4db8a8','#e8b04e'],
   rathalos:['#c23a28','#ecd6a8','#8a2e24','#2a1612','#e8b04e','#f0a03a'],
 };
+// world biomes — recolor ground/sky/fog/rocks; creatures keep PALETTES
+const BIOMES={
+  crater:{
+    name:'SCARRED CRATER', style:0,
+    gndA:[.44,.42,.345], gndB:[.38,.36,.29], gndD:[.62,.54,.40],
+    skyZ:[.16,.19,.27], skyH:[.78,.60,.45], sun:[1.,.85,.62],
+    fogM:1.0, fogB:0.0, fogT:[.78,.60,.45],
+    rock:[.36,.32,.28], rockN:3,
+    fixedRocks:[[3.6,-4.4,1.15],[-5.2,2.6,1.4],[1.4,5.6,.95]]
+  },
+  dunes:{
+    name:'SUNGOLD DUNES', style:1,
+    gndA:[.72,.58,.34], gndB:[.86,.70,.42], gndD:[.92,.78,.52],
+    skyZ:[.35,.55,.78], skyH:[.97,.82,.55], sun:[1.,.92,.70],
+    fogM:0.7, fogB:0.35, fogT:[.94,.80,.58],
+    rock:[.55,.42,.28], rockN:4
+  },
+  marsh:{
+    name:'MIREBACK MARSH', style:2,
+    gndA:[.28,.34,.24], gndB:[.18,.28,.22], gndD:[.32,.42,.30],
+    skyZ:[.18,.24,.22], skyH:[.48,.58,.45], sun:[.90,.88,.70],
+    fogM:1.85, fogB:0.55, fogT:[.40,.50,.42],
+    rock:[.30,.28,.24], rockN:5
+  },
+  tundra:{
+    name:'PALE TUNDRA', style:3,
+    gndA:[.82,.86,.90], gndB:[.70,.78,.86], gndD:[.95,.97,1.0],
+    skyZ:[.55,.68,.82], skyH:[.88,.90,.94], sun:[.95,.96,1.0],
+    fogM:0.65, fogB:0.4, fogT:[.78,.86,.94],
+    rock:[.55,.58,.62], rockN:3
+  },
+  ember:{
+    name:'EMBER WASTE', style:4,
+    gndA:[.18,.12,.10], gndB:[.28,.14,.08], gndD:[.95,.35,.08],
+    skyZ:[.12,.08,.10], skyH:[.55,.22,.10], sun:[1.,.55,.28],
+    fogM:0.8, fogB:0.35, fogT:[.28,.11,.06],
+    rock:[.22,.14,.12], rockN:4
+  }
+};
 const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
+
+// seed + biome pick early (species RNG still re-seeds from SEED later)
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a); /*BIOME*/
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}} /*BIOME*/
+const SEED=(()=>{ /*BIOME*/
+  if(typeof __TEST_SEED!=='undefined')return __TEST_SEED; /*BIOME*/
+  try{const m=/[?&]seed=(\d+)/.exec(location.search);if(m)return +m[1];}catch(e){} /*BIOME*/
+  return Math.floor(Math.random()*1e9); /*BIOME*/
+})(); /*BIOME*/
+const BIOME_KEY=(()=>{ /*BIOME*/
+  try{const m=/[?&]biome=([a-z]+)/.exec(location.search);if(m&&BIOMES[m[1]])return m[1];}catch(e){} /*BIOME*/
+  const keys=Object.keys(BIOMES); /*BIOME*/
+  const br=mulberry32((SEED^0x51de)>>>0); /*BIOME*/
+  return keys[Math.floor(br()*keys.length)]; /*BIOME*/
+})(); /*BIOME*/
+const BIOME=BIOMES[BIOME_KEY]; /*BIOME*/
 
 // ---------- creature state (multi-instance) ----------
 const ARENA_R=13;
-const ROCKS=[[3.6,-4.4,1.15],[-5.2,2.6,1.4],[1.4,5.6,.95]]; // x,z,radius
+function rollBiomeRocks(key,b){ /*BIOME*/
+  if(b.fixedRocks)return b.fixedRocks.map(r=>r.slice()); /*BIOME*/
+  let h=0x72cc; for(let i=0;i<key.length;i++)h=(h*33+key.charCodeAt(i))|0; /*BIOME*/
+  const rngR=mulberry32((SEED^h)>>>0); /*BIOME*/
+  const out=[]; let guard=0; /*BIOME*/
+  while(out.length<b.rockN&&guard++<500){ /*BIOME*/
+    const ang=rngR()*Math.PI*2, dist=3+rngR()*((ARENA_R-2)-3); /*BIOME*/
+    const x=Math.cos(ang)*dist, z=Math.sin(ang)*dist; /*BIOME*/
+    const rad=0.9+rngR()*0.7; /*BIOME*/
+    if(Math.hypot(x,z)<3)continue; /*BIOME*/
+    if(out.some(o=>Math.hypot(o[0]-x,o[1]-z)<2.5))continue; /*BIOME*/
+    out.push([+x.toFixed(2),+z.toFixed(2),+rad.toFixed(2)]); /*BIOME*/
+  } /*BIOME*/
+  while(out.length<b.rockN)out.push([3.6-out.length*2.5,-4.4+out.length*2.0,1.1]); /*BIOME*/
+  return out; /*BIOME*/
+} /*BIOME*/
+const ROCKS=rollBiomeRocks(BIOME_KEY,BIOME); // x,z,radius /*BIOME*/
 
 // scale a preset: lengths by s, speed sub-linearly so big things feel heavy
 function scalePreset(base,s){
@@ -1156,6 +1231,18 @@ gl_Position=vec4(v*2.-1.,0.,1.);}`;
 const ROCKS_GLSL=ROCKS.map(r=>
   `d=min(d,length(p-vec3(${r[0].toFixed(2)},${(-r[2]*.35).toFixed(2)},${r[1].toFixed(2)}))-${r[2].toFixed(2)});`
 ).join('\n  ');
+const _bv=a=>`vec3(${a[0].toFixed(3)},${a[1].toFixed(3)},${a[2].toFixed(3)})`; /*BIOME*/
+const BIOME_GLSL=`const vec3 B_GND_A=${_bv(BIOME.gndA)};
+const vec3 B_GND_B=${_bv(BIOME.gndB)};
+const vec3 B_GND_D=${_bv(BIOME.gndD)};
+const vec3 B_SKY_Z=${_bv(BIOME.skyZ)};
+const vec3 B_SKY_H=${_bv(BIOME.skyH)};
+const vec3 B_SUN=${_bv(BIOME.sun)};
+const vec3 B_FOG_T=${_bv(BIOME.fogT)};
+const vec3 B_ROCK=${_bv(BIOME.rock)};
+const float B_FOG_M=${BIOME.fogM.toFixed(3)};
+const float B_FOG_B=${BIOME.fogB.toFixed(3)};
+const int B_STYLE=${BIOME.style|0};`; /*BIOME*/
 
 const FS=`#version 300 es
 precision highp float;
@@ -1174,6 +1261,7 @@ uniform vec4 uLook[2];         // [gaze.xyz,0] per creature · living eyes
 uniform vec4 uFoot[8],uHurt;   // x,z,time,size footprints · x tail y legs z stone-hide w head
 uniform vec4 uHitFlash;        // x=zone(0none 1head 2body 3tail 4leg) y=age0..1 z=crit w=bounce/tink
 uniform float uPix;            // 0=off · N=posterize levels (pixel mode)
+${BIOME_GLSL}
 
 // ---- procedural skin: hash noise, cellular plates, wrinkle bump ----
 float hash1(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
@@ -1297,9 +1385,9 @@ float calcAO(vec3 p,vec3 n){
 }
 vec3 sky(vec3 rd){
   float h=clamp(rd.y*.5+.5,0.,1.);
-  vec3 c=mix(vec3(.78,.60,.45),vec3(.16,.19,.27),pow(h,.75));
+  vec3 c=mix(B_SKY_H,B_SKY_Z,pow(h,.75)); /*BIOME*/
   float s=clamp(dot(rd,uSun),0.,1.);
-  c+=vec3(1.,.85,.62)*(pow(s,500.)*2.2+pow(s,8.)*.16);
+  c+=B_SUN*(pow(s,500.)*2.2+pow(s,8.)*.16); /*BIOME*/
   return c;
 }
 int matAt(vec3 p, out int grp){
@@ -1347,10 +1435,12 @@ void main(){
     int po=grp==0?0:6;                       // palette offset per creature
     vec3 base; float shin=24.,spk=.25; vec3 emis=vec3(0.);
     if(mi==0){
-      base=vec3(.44,.42,.345);
+      float pat=.5+.5*sin(p.x*.7)*sin(p.z*.6); /*BIOME*/
+      if(B_STYLE==1)pat=.5+.5*sin(p.x*3.4+sin(p.z*2.2)*1.3); /*BIOME*/
+      if(B_STYLE==0){base=B_GND_A;base*=.94+.06*sin(p.x*.7)*sin(p.z*.6);} /*BIOME*/
+      else base=mix(B_GND_A,B_GND_B,pat); /*BIOME*/
       vec2 q=fract(p.xz*.85)-.5;                     // survey dots
       base*=1.-smoothstep(.05,.02,length(q))*.35;
-      base*=.94+.06*sin(p.x*.7)*sin(p.z*.6);
       float ar=abs(length(p.xz)-13.);                // arena boundary ring
       base=mix(base,vec3(.91,.69,.31),smoothstep(.16,.03,ar)*.35);
       float rr=length(p.xz-uMarkPos.xz);             // carve / call marker
@@ -1370,15 +1460,18 @@ void main(){
         if(age<.5){
           float rad=ft.w*(.30+age*1.7);
           float dust=smoothstep(ft.w*.075,0.,abs(fr-rad)-ft.w*.022)*(1.-age/.5);
-          base=mix(base,vec3(.62,.54,.40),dust*.34);
+          base=mix(base,B_GND_D,dust*.34); /*BIOME*/
         }
         vec2 ep=vec2(fd.x*.75,fd.y*1.28)/max(ft.w,.01);
         float print=(1.-smoothstep(.72,1.,dot(ep,ep)))*(1.-age/8.);
         base*=1.-print*.15;
       }
       spk=.02;
+      if(B_STYLE==2){spk=.42;shin=56.;} /*BIOME*/
+      if(B_STYLE==3){float sp=hash1(floor(p*42.));emis+=vec3(.9,.95,1.)*step(.968,sp)*.55;} /*BIOME*/
+      if(B_STYLE==4){float v=smoothstep(.62,.88,vnoise(p*2.1))+.55*smoothstep(.66,.9,vnoise(p*5.3+7.));base=mix(base,B_GND_D,v*.22);emis+=B_GND_D*min(v,1.)*.3;} /*BIOME*/
     }
-    else if(mi==9){base=vec3(.36,.32,.28);base*=.88+.12*sin(p.x*2.7)*sin(p.y*4.1)*sin(p.z*3.3);spk=.05;}
+    else if(mi==9){base=B_ROCK;base*=.88+.12*sin(p.x*2.7)*sin(p.y*4.1)*sin(p.z*3.3);spk=.05;} /*BIOME*/
     else if(mi==1||mi==2){
       // ---- hide: markings hang off a spine frame; bump only feeds lighting ----
       float belly=smoothstep(.05,.9,-n.y);
@@ -1501,7 +1594,8 @@ void main(){
       tr*=.88+.12*vnoise(p*5.5);               // faint vein streaks
       col+=base*tr*1.25;
     }
-    col=mix(col,sky(rd),1.-exp(-.0022*t*t));
+    if(B_STYLE==2&&mi==0)col+=sky(reflect(rd,n))*pow(1.-max(dot(n,-rd),0.),3.)*.14; /*BIOME*/
+    col=mix(col,mix(sky(rd),B_FOG_T,B_FOG_B),1.-exp(-.0022*B_FOG_M*t*t)); /*BIOME*/
   }
   // ACES fit (Narkowicz 2015) + gamma; mild exposure holds dusk midtones
   col*=.70;
@@ -1813,6 +1907,42 @@ const sfx={
   faint:()=>tone(220,55,.7,'sine',.4),
 };
 
+// ---------- procedural music director ----------
+const MUSIC=(()=>{
+  const TAU=Math.PI*2, root=110, major=[0,2,4,5,7,9,11], dark=[0,1,3,5,7,8,10];
+  let state='off',timer=null,next=0,bus=null,master=null,voices=[],pending=false,played=false,stepN=0;
+  let motif=null;
+  const hz=(d,oct=0,sc=major)=>root*Math.pow(2,(sc[((d%sc.length)+sc.length)%sc.length]+12*(Math.floor(d/sc.length)+oct))/12);
+  const mkMotif=()=>{const r=mulberry32((SEED^0xBEEF)>>>0),m=[];for(let i=0;i<12;i++)m.push({d:Math.floor(r()*7)+(i&&r()<.28?-2:0),n:r()<.25?2:1});return m;};
+  function param(x,n,v,t){if(x&&x[n]&&x[n].setValueAtTime)x[n].setValueAtTime(v,t);else if(x)x[n]=v;}
+  function ramp(x,n,v,t){if(x&&x[n]&&x[n].linearRampToValueAtTime)x[n].linearRampToValueAtTime(v,t);else param(x,n,v,t);}
+  function clean(o){try{o.stop();}catch(e){}try{o.disconnect();}catch(e){}if(o._g)try{o._g.disconnect();}catch(e){}voices=voices.filter(v=>v!==o);}
+  function voice(o,g,t){o._g=g;voices.push(o);o.onended=()=>clean(o);try{o.start(t);}catch(e){clean(o);}return o;}
+  function gain(v,t,d){const g=AC.createGain();param(g.gain,v,t);ramp(g.gain,.001,t+d);return g;}
+  function ensure(t){if(!AC)return false;if(!master){master=AC.createGain();param(master.gain,1,t);master.connect(AC.destination);}if(!bus){bus=AC.createGain();param(bus.gain,.14,t);bus.connect(master);}return true;}
+  function switchBus(t){if(!ensure(t))return;const old=bus;bus=AC.createGain();param(bus.gain,.0001,t);ramp(bus.gain,.14,t+1.5);bus.connect(master);if(old){ramp(old.gain,.0001,t+1.5);setTimeout(()=>{try{old.disconnect();}catch(e){}},1550);}}
+  function osc(f,d,type,v,t,dur,detune){if(!ensure(t)||muted)return;const o=AC.createOscillator(),g=gain(v,t,dur);o.type=type;o.frequency.setValueAtTime(f,t);if((type==='triangle'||type==='square')&&o.frequency.setValueAtTime){o.frequency.setValueAtTime(f*1.006,t+Math.min(.08,dur*.35));o.frequency.setValueAtTime(f*.994,t+Math.min(.16,dur*.7));}if(detune!==undefined)param(o.detune,detune,t);o.connect(g).connect(bus);voice(o,g,t);try{o.stop(t+dur+.03);}catch(e){}}
+  function pad(ds,t,dur){if(!ensure(t)||muted)return;for(const d of ds){const o=AC.createOscillator(),g=gain(.0001,t,dur),f=AC.createBiquadFilter();o.type='sawtooth';o.frequency.setValueAtTime(hz(d),t);param(o.detune,-7,t);f.type='lowpass';param(f.frequency,900,t);o.connect(f).connect(g).connect(bus);voice(o,g,t);try{o.stop(t+dur+.04);}catch(e){}}}
+  function noise(t,v,dur,fc){if(!ensure(t)||muted)return;const n=AC.createBufferSource(),f=AC.createBiquadFilter(),g=gain(v,t,dur);n.buffer=AC.createBuffer(1,Math.max(1,Math.floor(AC.sampleRate*dur)),AC.sampleRate);f.type='lowpass';param(f.frequency,fc,t);n.connect(f).connect(g).connect(bus);voice(n,g,t);try{n.stop(t+dur+.02);}catch(e){}}
+  function thump(t,hard){if(!ensure(t)||muted)return;noise(t,hard?.055:.025,.12,hard?850:420);osc(hz(0,-1),.0001,'sine',hard?.09:.045,t,.16,-3);osc(hz(0,0),.0001,'triangle',hard?.035:.018,t,.09);}
+  function bell(d,t){osc(hz(d,2),'x','sine',.055,t,.34);osc(hz(d+2,2),'x','sine',.018,t,.24);}
+  function chord(ds,t,dur){pad(ds,t,dur);}
+  function loop(t,step,st){
+    const en=st==='enrage', slow=st==='prowl', i=step%motif.length, m=motif[i], beat=(en?0.34:slow?.72:.48);
+    if(st==='title'){
+      const chords=[[0,2,4],[5,0,2],[3,5,0],[4,6,1]], c=Math.floor(step/4)%4;
+      chord(chords[c].map(x=>x),t,1.85);if(step%2===0)osc(hz([0,2,4,2][step/2%4],1),'x','triangle',.045,t,.42);if(step%4===3)bell([0,2,4,2][Math.floor(step/4)%4],t+.08);return 1.8;
+    }
+    if(st==='prowl'){osc(hz(0,-1),'x','sine',.07,t,beat*1.8);if(step%3===0)osc(hz(m.d,-1),'x','triangle',.045,t,.22*m.n);if(step%2===0)thump(t,false);return beat;}
+    if(st==='battle'||en){thump(t,true);if(step%2===0)thump(t+.18,true);osc(hz(0,-1),'x','sine',.065,t,beat*.8);osc(hz(m.d,en?0:1,en?dark:major),'x',en?'square':'triangle',en?.055:.065,t,.18*m.n);if(step%4===1)chord([m.d,m.d+2,m.d+4],t,.22);if(en){osc(hz((step*2)%7,2,dark),'x','square',.026,t,.16);if(step%3===0)osc(hz(m.d,2,dark),'x','sine',.055,t+.08,.34);}return beat/(en?1.15:1);}
+    return .5;
+  }
+  function sting(st,t){if(!ensure(t)||muted)return;if(st==='victory'){const a=[0,2,4,7,4,7,9];a.forEach((d,i)=>osc(hz(d,1),'x','triangle',.08,t+i*.34,.38));pad([0,4,6],t+1.7,2.7);ramp(master.gain,.001,t+5.8);}else{[4,2,0,-2].forEach((d,i)=>osc(hz(d,-1),'x','sine',.08,t+i*.45,.5));ramp(master.gain,.001,t+2.5);}}
+  function tick(){if(!AC||muted)return;if(!ensure(AC.currentTime))return;const now=AC.currentTime;if(state==='victory'||state==='defeat'){if(pending){pending=false;sting(state,now+.03);}return;}if(state==='off')return;if(!motif)motif=mkMotif();if(!next||next<now-.5)next=now+.22;const ahead=now+.3;while(next<ahead){const dur=loop(next,stepN++,state);next+=dur||.5;}}
+  function set(st){if(['off','title','prowl','battle','enrage','victory','defeat'].indexOf(st)<0)return;if(st===state&&!(st==='victory'||st==='defeat'))return;state=st;next=0;stepN=0;played=false;pending=st==='victory'||st==='defeat';if(st==='off'){pending=false;for(const v of voices.slice())clean(v);if(master){ramp(master.gain,.001,(AC?AC.currentTime:0)+.12);}return;}if(st==='victory'||st==='defeat')for(const v of voices.slice())clean(v);if(AC&&ensure(AC.currentTime)){param(master.gain,Math.max(.001,(master.gain&&master.gain.value)||1),AC.currentTime);ramp(master.gain,1,AC.currentTime+.4);switchBus(AC.currentTime);}if(!timer&&typeof setInterval!=='undefined')timer=setInterval(tick,100);if(AC)tick();}
+  return{set,get state(){return state;}};
+})();
+
 function spendStamina(cost){
   if(player.stam<cost)return false;
   player.stam=Math.max(0,player.stam-cost);
@@ -1844,13 +1974,7 @@ function potionUpdate(dt){
 // ---------- the bestiary: every hunt is a generated species ----------
 // The body plan IS the moveset: wings dive, long tails sweep wide, tailless
 // bruisers slam, bulk buys HP and costs speed, twitchy species get short tells.
-function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
-  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
-const SEED=(()=>{
-  if(typeof __TEST_SEED!=='undefined')return __TEST_SEED;
-  try{const m=/[?&]seed=(\d+)/.exec(location.search);if(m)return +m[1];}catch(e){}
-  return Math.floor(Math.random()*1e9);
-})();
+// mulberry32 + SEED defined earlier (biome pick); species stream below. /*BIOME*/
 // pixel mode: ?pixel=1 on load · P toggles at runtime (presentation only)
 let pixelMode=(()=>{
   try{const m=/[?&]pixel=1(?:&|$)/.exec(location.search);if(m)return true;}catch(e){}
@@ -2647,7 +2771,7 @@ const wingBuf=new Float32Array(40); // 2 wings × 5 strip points
   banner('SLAY '+SPECIES.name,
     (tells.length?tells.join(' · '):'A BALANCED PREDATOR — READ IT AS YOU FIGHT'),5600);
   const q2=$('quest2');
-  if(q2)q2.textContent='QUEST 01 · SLAY '+SPECIES.name+' · SPECIES #'+SEED;
+  if(q2)q2.textContent='QUEST 01 · '+BIOME.name+' · SLAY '+SPECIES.name+' · SPECIES #'+SEED; /*BIOME*/
 }
 let last=performance.now();
 function frame(now){
