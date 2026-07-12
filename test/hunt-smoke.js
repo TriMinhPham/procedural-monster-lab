@@ -28,8 +28,20 @@ const glStub = new Proxy({}, {
 });
 const canvas = Object.assign(makeEl(), { width: 0, height: 0, getContext: () => glStub });
 
+// deterministic runs: combat rolls unseeded Math.random (damage, AI orbit
+// flips), which made assertions flake per-run. Hand the page a seeded clone.
+const seededMath = Object.create(Math);
+{
+  let s = (+(process.env.HUNT_SEED || 7) ^ 0x9e3779b9) >>> 0;
+  seededMath.random = () => {
+    s |= 0; s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const ctx = {
-  console, Math, JSON, Float32Array, Map, Set, Proxy, Error, String,
+  console, Math: seededMath, JSON, Float32Array, Map, Set, Proxy, Error, String,
   __TEST_SEED: +(process.env.HUNT_SEED || 7),
   document: {
     getElementById: id => (id === 'gl' ? canvas : makeEl()),
@@ -79,6 +91,12 @@ vm.runInContext(`
   player.target = [0, 0, 11.5];
   __drive(240); __checkFinite('patrol');
   if (game.ai.state !== 'patrol') throw new Error('boss should still patrol, got ' + game.ai.state);
+  if (player.P.humanoid !== true) throw new Error('player is not the hunter preset');
+  const armR = player.segs.soft.filter(s => s[5] === 'armR').length;
+  const armL = player.segs.soft.filter(s => s[5] === 'armL').length;
+  if (armR < 2 || armL < 2) throw new Error('hunter arms were not emitted');
+  for (const p of [player.bladeA, player.bladeB])
+    if (!p.every(isFinite)) throw new Error('hunter blade endpoint is not finite');
 
   // 2. approach → aggro
   player.leader = [boss.leader[0] + 5, player.P.chestH, boss.leader[2]];
@@ -86,8 +104,16 @@ vm.runInContext(`
   player.target = [player.leader[0], 0, player.leader[2]];
   __drive(60); __checkFinite('aggro');
   if (game.ai.state !== 'hunt') throw new Error('boss did not aggro: ' + game.ai.state);
+  const windups = [
+    ['bite', AIP.biteWind, (.52 - .24 * SPECIES.snappy) * 1.8],
+    ['charge', AIP.chargeWind, (.68 - .3 * SPECIES.snappy) * 1.6],
+    ['tailswipe', AIP.swipeWind, .44 * 1.6],
+    ['pounce', AIP.pounceWind, (.24 + .05 * Math.min(massOf(boss), 6)) * 1.4],
+  ];
+  for (const [name, got, want] of windups)
+    if (Math.abs(got - want) > 1e-9) throw new Error(name + ' windup base changed: ' + got);
 
-  // 3. land a hit: park the player at the boss's flank and attack
+  // 3. land a hit: park the hunter at point-blank range and attack
   let hits = 0;
   for (let tryN = 0; tryN < 30 && boss.hp === boss.maxHp; tryN++) {
     player.leader = [boss.chest[0] + 1.1, player.P.chestH, boss.chest[2]];
@@ -97,6 +123,12 @@ vm.runInContext(`
   }
   __checkFinite('first-blood');
   if (boss.hp >= boss.maxHp) throw new Error('player attacks never connected');
+  if (!player._sweepTag) throw new Error('swept blade hit had no part tag');
+  // anatomy: hitBoss must record lastHit for the struck-zone flash
+  if (!game.lastHit || !game.lastHit.tag) throw new Error('game.lastHit not recorded on hit');
+  if (typeof game.lastHit.t !== 'number' || !isFinite(game.lastHit.t))
+    throw new Error('game.lastHit.t invalid: ' + game.lastHit.t);
+  console.log('lastHit:', game.lastHit.tag, '@', game.lastHit.t.toFixed(2));
 
   // 3b. combo buffering: click mid-strike chains to stage 2
   // parked away from the boss with topped-up HP: buffering must not depend on
@@ -112,7 +144,47 @@ vm.runInContext(`
   if (player._comboN !== 1) throw new Error('combo did not chain: ' + player._comboN);
   __drive(60); __checkFinite('combo');
 
-  // 3c. leap: force a pounce, confirm liftoff and a clean landing.
+  // 3c. potion: hold Q through the 1.1s channel, then prove damage cancels
+  // without consuming the next potion.
+  game.ai.state = 'tired'; game.ai.tiredT = 99; boss.restOn = true; boss.act = null;
+  player.hp = 35; player.iFrames = 0; game.potions = 3;
+  keys.add('q'); startPotion(); __drive(70); keys.delete('q');
+  if (game.potion) throw new Error('potion channel did not complete');
+  if (game.potions !== 2) throw new Error('potion was not consumed');
+  if (player.hp !== 90) throw new Error('potion healed wrong amount: ' + player.hp);
+  player.hp = 100; player.iFrames = 0;
+  keys.add('q'); startPotion(); __drive(20);
+  if (!game.potion) throw new Error('potion channel ended too early');
+  hurtPlayer(1, boss.leader); keys.delete('q');
+  if (game.potion) throw new Error('damage did not cancel potion');
+  if (game.potions !== 2) throw new Error('canceled potion was consumed');
+  game.ai.state = 'hunt'; game.ai.tiredT = 0; boss.restOn = false;
+  __drive(10); // clear the damage hit-stop before timing the dash cancel
+
+  // 3d. dash cancel: stamina is spent by the dash and by its attack cancel.
+  player.stam = player.stamMax; player.stamRegenT = 0; player.act = null;
+  player.moveDir = [1, 0, 0];
+  const stamBeforeDash = player.stam;
+  playerDash(); __drive(8);
+  if (player.act !== 'dash') throw new Error('dash ended before cancel window');
+  if (player.stam !== stamBeforeDash - 30)
+    throw new Error('dash did not spend stamina: ' + player.stam);
+  playerAttack();
+  if (player.act !== 'strike' || player.actProf.kind !== 'slash')
+    throw new Error('dash did not cancel into strike');
+  if (player.stam !== stamBeforeDash - 35)
+    throw new Error('dash cancel did not spend stamina: ' + player.stam);
+  __drive(50); __checkFinite('dash-cancel');
+
+  // Three rapid dashes from 60 stamina: the third must be refused.
+  player.act = null; player.stam = 60; player.stamRegenT = 1;
+  playerDash(); player.act = null; playerDash(); player.act = null;
+  const blockedStam = player.stam; playerDash();
+  if (player.act === 'dash' || player.stam !== blockedStam)
+    throw new Error('third instant dash was not blocked');
+  player.stam = player.stamMax; player.stamRegenT = 0; player.act = null;
+
+  // 3e. leap: force a pounce, confirm liftoff and a clean landing.
   // Ground the boss first — the movement brain may have it mid-jump/mid-swoop,
   // and startLeap (correctly) refuses while airborne.
   __drive(30);
@@ -155,7 +227,8 @@ vm.runInContext(`
   __drive(200); __checkFinite('post-slam');
 
   // 7. kill + corpse carve
-  hitBoss(boss.hp + 50, 'head', boss.chest);
+  // hitzone mults can be <1 (plated head 0.7) — overkill so any zone still kills
+  hitBoss(boss.hp * 4 + 200, 'head', boss.chest);
   if (!boss.dead || !game.over) throw new Error('boss did not die');
   __drive(120); __checkFinite('dead');
   player.leader = [boss.chest[0] + 1, player.P.chestH, boss.chest[2]];
@@ -167,7 +240,9 @@ vm.runInContext(`
   console.log('loot:', game.loot.join(', '));
 
   // 8. faint + respawn, then quest fail at 3
-  game.over = false; boss.dead = false; // re-arm so hurtPlayer works
+  // hard-reset: earlier __drive segments can stochastically faint the hunter
+  game.over = false; boss.dead = false; game.failed = false; game.faints = 0;
+  player.dead = false; player.hp = player.maxHp; player.iFrames = 0;
   hurtPlayer(500, boss.leader);
   if (game.faints !== 1) throw new Error('faint not counted');
   __drive(200);
@@ -176,6 +251,98 @@ vm.runInContext(`
   __drive(200); player.iFrames = 0; hurtPlayer(500, boss.leader);
   if (!game.failed) throw new Error('quest did not fail after 3 faints');
   __drive(60); __checkFinite('failed');
+
+  // 9. anatomy landmarks: every species rolls a head tell; skeleton emits it
+  if (!SPECIES.lmHead) throw new Error('SPECIES.lmHead missing (generator landmark)');
+  if (!['crown', 'fan', 'brow'].includes(SPECIES.lmHead))
+    throw new Error('bad lmHead: ' + SPECIES.lmHead);
+  if (SPECIES.tailMul > 0 && !SPECIES.lmTail)
+    throw new Error('tailed species missing lmTail');
+  if (typeof SPECIES.lmBack !== 'boolean') throw new Error('SPECIES.lmBack missing');
+  if (boss.P.lmHead !== SPECIES.lmHead) throw new Error('boss.P.lmHead not wired');
+  // rebuild once and assert landmark capsules (mat 3/5 on tagged head/tail)
+  buildSkeleton(boss, 1 / 60);
+  const all = [...boss.segs.soft, ...boss.segs.hard];
+  const headLM = all.filter(s => s[5] === 'head' && (s[4] === 3 || s[4] === 5));
+  if (headLM.length < 1)
+    throw new Error('no head landmark capsules (mat 3/5) for lmHead=' + SPECIES.lmHead);
+  if (SPECIES.lmTail === 'band') {
+    const bands = all.filter(s => s[5] === 'tail' && s[4] === 5);
+    if (bands.length < 1) throw new Error('lmTail=band emitted no accent band capsules');
+  }
+  if (SPECIES.lmTail === 'club') {
+    if (!boss.P.tailClub) throw new Error('lmTail=club did not set tailClub');
+  }
+  if (SPECIES.lmBack && !boss.P.plates)
+    throw new Error('lmBack did not enable plates');
+  // hitBoss records part tag for flash zones
+  const prev = game.lastHit;
+  hitBoss(1, 'head', boss.headPos);
+  if (!game.lastHit || game.lastHit.tag !== 'head')
+    throw new Error('hitBoss head did not set lastHit.tag=head');
+  hitBoss(1, 'tail', boss.chest);
+  if (game.lastHit.tag !== 'tail') throw new Error('hitBoss tail lastHit failed');
+  hitBoss(1, 'leg0', boss.chest);
+  if (game.lastHit.tag !== 'leg0') throw new Error('hitBoss leg lastHit failed');
+  game.lastHit = prev;
+  console.log('landmarks:', SPECIES.lmHead, SPECIES.lmTail || '-', 'back=' + SPECIES.lmBack,
+    '| head caps:', headLM.length);
+
+  // 10. hitzones: plated bounce, belly amp, tired softening
+  if (!SPECIES.hz || typeof SPECIES.hz.body !== 'number')
+    throw new Error('SPECIES.hz missing after generator');
+  for (const k of ['head', 'body', 'legs', 'tail', 'belly'])
+    if (typeof SPECIES.hz[k] !== 'number') throw new Error('SPECIES.hz.' + k + ' missing');
+  // force plated profile for deterministic bounce/belly/tired checks
+  const hzPrev = Object.assign({}, SPECIES.hz);
+  const platedPrev = SPECIES.plated, softPrev = SPECIES.softBelly;
+  const aiPrev = game.ai.state, stamPrev = game.ai.stam, softLogPrev = game.tiredSoftLog;
+  SPECIES.hz = { head: 0.7, body: 0.45, legs: 1, tail: 1.1, belly: 1.35 };
+  SPECIES.plated = true; SPECIES.softBelly = false;
+  game.ai.state = 'hunt'; game.tiredSoftLog = false;
+  boss.dead = false; game.over = false; boss.hp = Math.max(boss.hp, 200);
+  // body hit above spine → bounce: reduced dmg, no stam drain
+  const bodyPos = [boss.chest[0], boss.chest[1] + 0.4, boss.chest[2]];
+  const hpB = boss.hp, stamB = game.ai.stam;
+  hitBoss(20, 'body', bodyPos);
+  const bodyDmg = hpB - boss.hp;
+  if (bodyDmg >= 20) throw new Error('plated body hit not reduced: dmg=' + bodyDmg);
+  if (bodyDmg !== Math.round(20 * 0.45))
+    throw new Error('plated body mult wrong: dmg=' + bodyDmg + ' expected ' + Math.round(20 * 0.45));
+  if (game.ai.stam !== stamB)
+    throw new Error('bounce drained stamina: ' + stamB + '→' + game.ai.stam);
+  if (!game.lastHit || !game.lastHit.bounce)
+    throw new Error('bounce path did not set lastHit.bounce');
+  // belly hit below spine midline → amplified
+  const midY = Math.min(boss.chest[1], boss.hip[1]) - 0.35;
+  const bellyPos = [boss.chest[0], midY, boss.chest[2]];
+  const hpL = boss.hp;
+  hitBoss(20, 'body', bellyPos);
+  const bellyDmg = hpL - boss.hp;
+  if (bellyDmg <= bodyDmg)
+    throw new Error('belly hit not amplified vs body: belly=' + bellyDmg + ' body=' + bodyDmg);
+  if (bellyDmg !== Math.round(20 * 1.35))
+    throw new Error('belly mult wrong: dmg=' + bellyDmg);
+  if (game.lastHit.bounce) throw new Error('belly hit should not bounce');
+  // tired: plated body softens (floor 0.9) then ×1.4 exhaust bonus
+  game.ai.state = 'tired'; game.tiredSoftLog = false;
+  const hpT = boss.hp, stamT = game.ai.stam;
+  hitBoss(20, 'body', bodyPos);
+  const tiredDmg = hpT - boss.hp;
+  const expectTired = Math.round(20 * 0.9 * 1.4);
+  if (tiredDmg !== expectTired)
+    throw new Error('tired soften dmg=' + tiredDmg + ' expected ' + expectTired);
+  if (tiredDmg <= bodyDmg)
+    throw new Error('tired plated hit should exceed bounce dmg');
+  if (game.lastHit.bounce)
+    throw new Error('tired soft hit should not be bounce path');
+  if (game.ai.stam >= stamT)
+    throw new Error('tired soft hit should drain stamina');
+  // restore
+  SPECIES.hz = hzPrev; SPECIES.plated = platedPrev; SPECIES.softBelly = softPrev;
+  game.ai.state = aiPrev; game.ai.stam = stamPrev; game.tiredSoftLog = softLogPrev;
+  console.log('hitzones: body', bodyDmg, 'belly', bellyDmg, 'tired', tiredDmg,
+    '| rolled body mult', hzPrev.body);
 
   console.log('HUNT SMOKE OK');
 `, ctx, { filename: 'hunt-driver.js' });

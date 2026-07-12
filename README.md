@@ -17,14 +17,30 @@ smoothly-blended capsules.
 
 Open `hunt.html` — a Monster Hunter-style quest built on the same engine.
 Every hunt generates a **new species** (`?seed=N` to pin one): archetype ×
-scale, bulk, legs, wings, tail, tempo, palette, and a name — and the body
-plan is the moveset (wings dive-bomb, long tails sweep, tailless bruisers
-slam, twitchy species telegraph less). The quest banner briefs the tells.
+scale, bulk, legs, wings, tail, tempo, palette, hitzones, landmarks, and a
+name — and the body plan is the moveset (wings dive-bomb, long tails sweep,
+tailless bruisers slam, twitchy species telegraph less). The quest banner
+briefs the tells.
 
-- **WASD** move · **click / J** attack · **shift** dash (i-frames) · **space** jump ·
-  **Tab** lock-on · **E** carve · **M** mute · 3 faints = quest failed
+- **WASD** move · **click / J** attack — 3-hit sword combo · **shift** dash
+  (i-frames) · **space** jump · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
+  **M** mute · 3 faints = quest failed
+- **You hunt as a hunter** — an armored capsule-knight (helmet, pauldrons, no
+  face) built from the same limb class as the monsters: slash · backhand ·
+  overhead heavy, the swings driven by arm IK, the blade swept as a 5-point
+  probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
+  and attacking out of a dash cancels it into the first slash with the
+  momentum folded in.
+- **Stamina is the leash** — dashes and the heavy finisher spend it, regen
+  pauses after every burn; potions channel for a second and cancel on damage.
 - **The SDF is the hitbox** — hits are one JS evaluation of the enemy's capsule
   list; the nearest capsule names the part (head crits, legs cripple, tail severs).
+- **Anatomy is the tutorial**: every species rolls a landmark on its key part
+  (crest on the crit head, club/banding on the sweep tail, dorsal ridge on
+  plated backs), the struck zone flashes on hit, and **hitzones** make it
+  matter — plated hides *tink* and deflect, soft bellies take bonus, an
+  exhausted monster's armor softens. Boss windups got slower and each attack
+  family has its own synthesized tell tone: fights are learnable, then fair.
 - **Part breaks**: drain the tail pool and it detaches into the world as a
   carveable prop; wound the legs and the gait stepper limps.
 - **Boss AI** rides the dynamics system: patrol → roar/aggro → bite, charge,
