@@ -477,8 +477,9 @@ function simulate(cr,dt){
   // --- Phase V: body follows the leader through the dynamics system ---
   const chestS=st.sodChest.update(dt,st.leader);
   st.phase+=speed*dt/P.stride;
-  // wingbeat: open in the air, flush against the body on the ground
-  const wTgt=st.wings?(st.air>.03?1:(st.speedN>.75?.3:0)):0;
+  // wingbeat: open on flight intent (flyOK) or real altitude, fold during the
+  // final descent — the solid sail must not sit spread on a grounded monster
+  const wTgt=st.wings?((st.flyOK&&!st.restOn)||st.air>.3?1:(st.speedN>.75?.14:0)):0;
   st.wOpen+=(wTgt-st.wOpen)*Math.min(1,dt*3);
   if(st.wOpen>.02)st.flap+=dt*Math.PI*2*(1.5+2.1*st.air);
   const bodySide=nrm(cross(V(0,1,0),st.fw));
@@ -798,8 +799,10 @@ function buildSkeleton(cr,dt){
 
   // wings — bat plan: humerus → radius → three webbed flight fingers. Folded
   // they shingle along the flank; airborne the flap travels outward (wrist
-  // lags shoulder, tips lag wrist) and the membrane billows on the upstroke.
-  // A broken wing hangs dead at the side, its webbing torn to rags.
+  // lags shoulder, tips lag wrist). The membrane is one solid sail — a 5-point
+  // fan strip the renderer inflates into thin triangles (dragon skin, not
+  // strands). A broken wing hangs dead, its sail torn away to rag chords.
+  const wingStrip=[null,null];
   if(st.wings){
     const wsc=(P.wingScale||1)*(P.chestR/.22);
     const open=st.wOpen, fl=st.flap;
@@ -814,8 +817,10 @@ function buildSkeleton(cr,dt){
       const d2=add(scl(bs,s*Math.cos(F2)),scl(bu,Math.sin(F2)));
       const eO=add(sh,add(scl(d1,.32*wsc),scl(fw,-.03)));
       const wO=add(eO,add(scl(d2,.34*wsc),scl(fw,-.07)));
-      const eF=add(sh,add(scl(fw,-.20*wsc),scl(bs,s*.03)));
-      const wF=add(eF,add(scl(fw,-.24*wsc),scl(bu,.03)));
+      // fold collapses like a bat: wrist tucks to the shoulder, fingertips
+      // collapse onto the forearm — the solid sail shrinks to a leather bundle
+      const eF=add(sh,add(scl(fw,-.16*wsc),scl(bs,s*.03)));
+      const wF=add(eF,add(scl(fw,-.18*wsc),scl(bu,.03)));
       const eBk=add(sh,add(scl(bs,s*.17*wsc),scl(bu,-.12*wsc)));       // broken: shoulder droop,
       const wBk=add(eBk,add(scl(bs,s*.10*wsc),add(scl(bu,-.26*wsc),scl(fw,-.05*wsc)))); // wrist to the dirt
       const e=brk?eBk:mix(eF,eO,open), w=brk?wBk:mix(wF,wO,open);
@@ -833,29 +838,40 @@ function buildSkeleton(cr,dt){
       for(let f=0;f<3;f++){
         const dT=nrm(add(d2,scl(bu,F3*(.24+.15*f))));                  // tip wave chases the wrist
         const tO=add(w,add(scl(dT,FIG[f][0]*wsc*span),scl(fw,FIG[f][1]*wsc*span)));
-        const tF=add(w,add(scl(fw,-(.20+.08*f)*wsc),scl(bu,(.05-.045*f)*wsc)));
+        const tF=add(w,add(scl(fw,-(.10+.05*f)*wsc),scl(bu,(.04-.04*f)*wsc)));
         const tB=add(w,add(scl(bu,-(.12+.05*f)*wsc),add(scl(fw,(-.02-.12*f)*wsc),scl(bs,s*.04*wsc))));
         const tp=brk?tB:mix(tF,tO,open);
         if(brk)tp[1]=Math.max(tp[1],.05);              // dead fingertips drag, not clip
         S(w,tp,.024*wsc,.006*wsc,2,soft,wTag);
         tips.push(tp);
       }
-      // membrane: chords web the finger gaps and sweep to the flank, sagging
-      // on the upstroke (billow). A broken wing keeps every other chord — rags.
+      // membrane: intact wings carry the solid sail; a broken wing loses it
+      // and keeps only a few sagging rag strands where the skin tore away
       const flank=add(mix(st.chest,st.hip,.5),add(scl(bs,s*P.hipR*rs*.55),scl(bu,P.hipR*rs*.05)));
-      const bil=(.02+.11*Math.max(0,-Math.sin(fl-.4)))*open+(brk?.05:0);
-      const nCh=HIDEF?3:2;
-      for(let c2=1;c2<=nCh;c2++){
-        const u=c2/(nCh+.35);
-        if(brk&&(c2&1))continue;
-        const sag=scl(bu,-bil*(.4+.6*u));
-        const A=add(mix(w,tips[0],u),sag), B=add(mix(w,tips[1],u*.96),sag);
-        const C=add(mix(brk?w:flank,tips[2],u*.9),sag);
-        const mr=.020*wsc*(1-.35*u);
-        S(A,B,mr,mr*.7,memMat,soft,wTag);
-        S(B,C,mr*.8,mr*.55,memMat,soft,wTag);
+      if(!brk){
+        // the sail unfurls with the wing and pleats away to NOTHING when
+        // furled — a folded membrane is invisible inside the spar bundle;
+        // thickness ramps from zero so there is no pop as the wing spreads
+        const openK=Math.min(1,open*2.2);
+        const unfurl=clamp((open-.12)/.25,0,1);
+        const th=(.007+.005*wsc)*(.3+.7*openK)*unfurl;
+        if(th>.002){
+          const flankA=mix(add(w,scl(bu,-.08*wsc)),flank,openK);
+          wingStrip[s>0?0:1]={pts:[w,tips[0],tips[1],tips[2],flankA],th};
+        }
+      }else{
+        const nCh=HIDEF?3:2;
+        for(let c2=1;c2<=nCh;c2+=2){
+          const u=c2/(nCh+.35);
+          const sag=scl(bu,-.08*(.4+.6*u));
+          const A=add(mix(w,tips[0],u),sag), B=add(mix(w,tips[1],u*.96),sag);
+          const C=add(mix(w,tips[2],u*.9),sag);
+          const mr=.014*wsc*(1-.35*u);
+          S(A,B,mr,mr*.7,memMat,soft,wTag);
+          S(B,C,mr*.8,mr*.55,memMat,soft,wTag);
+        }
+        S(tips[2],add(w,scl(bu,-.16*wsc)),.012*wsc,.022*wsc,memMat,soft,wTag);
       }
-      S(tips[2],brk?add(w,scl(bu,-.16*wsc)):flank,.016*wsc,.030*wsc,memMat,soft,wTag); // trailing edge
     }
   }
 
@@ -1083,7 +1099,8 @@ function buildSkeleton(cr,dt){
   }
 
   // modest boss smin pinch (×0.8) so seams read without looking segmented
-  st.segs={soft,hard,center:mix(st.chest,st.hip,.5),k:P.k*st.radScale*(st.isPlayer?1:.8)};
+  st.segs={soft,hard,center:mix(st.chest,st.hip,.5),k:P.k*st.radScale*(st.isPlayer?1:.8),
+           wingStrip};
   return st.segs;
 }
 
@@ -1098,9 +1115,9 @@ if(!gl){document.getElementById('fail').style.display='grid';throw new Error('no
 // larger constant costs upload size, not per-pixel time.
 const MAXV=gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)||256;
 const HIDEF=MAXV>=512;
-// 42 non-capsule vectors (camera/pal/spine/look/foot/hurt) + 2 margin; uA+uB
-// take 2 per capsule — derive the budget so the GLES3 224 minimum still links
-const MAXN=HIDEF?160:Math.min(96,(MAXV-44)>>1), NGRP=3;
+// 52 non-capsule vectors (camera/pal/spine/look/foot/hurt/wing sails) + 2
+// margin; uA+uB take 2 per capsule — derive the budget so low-limit GPUs link
+const MAXN=HIDEF?160:Math.min(96,(MAXV-54)>>1), NGRP=3;
 if(!HIDEF)for(const nm in PRESETS){const p=PRESETS[nm];
   delete p.muscle;delete p.brow;delete p.claws;delete p.plates;}
 
@@ -1205,6 +1222,30 @@ float sdRC(vec3 p, vec4 A, vec4 B){
 float smin(float a,float b,float k){
   float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
 
+// wing membrane: a thin solid sail, not strands. Each wing is a 5-point fan
+// strip (wrist, 3 fingertips, flank) → 3 triangles, inflated by thickness.
+uniform vec4 uWing[10];        // [0-4] wing0 strip · [5-9] wing1 · [0].w thick · [1].w mat
+float dot2v(vec3 v){return dot(v,v);}
+float udTri(vec3 p,vec3 a,vec3 b,vec3 c){
+  vec3 ba=b-a,pa=p-a,cb=c-b,pb=p-b,ac=a-c,pc=p-c;
+  vec3 nor=cross(ba,ac);
+  return sqrt(
+    (sign(dot(cross(ba,nor),pa))+sign(dot(cross(cb,nor),pb))+sign(dot(cross(ac,nor),pc))<2.)
+    ? min(min(dot2v(ba*clamp(dot(ba,pa)/dot2v(ba),0.,1.)-pa),
+              dot2v(cb*clamp(dot(cb,pb)/dot2v(cb),0.,1.)-pb)),
+          dot2v(ac*clamp(dot(ac,pc)/dot2v(ac),0.,1.)-pc))
+    : dot(nor,pa)*dot(nor,pa)/dot2v(nor));
+}
+float wingSail(vec3 p,int wi){
+  int b0=wi*5;
+  float th=uWing[b0].w;   // slot 0 / slot 5 carry per-wing thickness (0 = no sail)
+  if(th<=0.)return 1e9;
+  return min(min(
+    udTri(p,uWing[b0].xyz,uWing[b0+1].xyz,uWing[b0+2].xyz),
+    udTri(p,uWing[b0].xyz,uWing[b0+2].xyz,uWing[b0+3].xyz)),
+    udTri(p,uWing[b0].xyz,uWing[b0+3].xyz,uWing[b0+4].xyz))-th;
+}
+
 float rockSDF(vec3 p){
   float d=1e9;
   ${ROCKS_GLSL}
@@ -1224,6 +1265,7 @@ float mapM(vec3 p){
       float di=sdRC(p,A,uB[s0+i]);
       dg=(i<ns)?smin(dg,di,k):min(dg,di);
     }
+    if(g==1){dg=min(dg,wingSail(p,0));dg=min(dg,wingSail(p,1));} // boss wing sails
     d=min(d,dg);
   }
   return d;
@@ -1271,6 +1313,10 @@ int matAt(vec3 p, out int grp){
       float di=sdRC(p,A,uB[s0+i]);
       if(di<best){best=di;mi=int(m_+.5);grp=g;}
     }
+  }
+  for(int wi=0;wi<2;wi++){ // wing sails shade as membrane
+    float dm=wingSail(p,wi);
+    if(dm<best){best=dm;mi=int(uWing[1].w+.5);grp=1;}
   }
   return mi;
 }
@@ -1491,7 +1537,7 @@ try{prog=makeProg(VS,FS);}catch(e){
 gl.useProgram(prog);
 const U={};
 for(const n of['uRes','uTime','uTanF','uMark','uRage','uCamPos','uSun','uMarkPos','uSlam','uFoot','uHurt',
-  'uHitFlash','uCamRot','uA','uB','uGrpA','uGrpB','uPal','uSpine','uLook','uPix'])
+  'uHitFlash','uCamRot','uA','uB','uGrpA','uGrpB','uPal','uSpine','uLook','uPix','uWing'])
   U[n]=gl.getUniformLocation(prog,n);
 const SUN=nrm(V(-.45,.62,-.38));
 
@@ -1982,12 +2028,32 @@ function sdRCjs(p,a,b,r1,r2){
   if(Math.sign(y)*a2*y2<k) return Math.sqrt(x2+y2)*il2-r1;
   return (Math.sqrt(x2*a2*il2)+y*rr)*il2-r1;
 }
+function udTriJs(p,a,b,c){ // unsigned distance to a triangle — the wing sail is a hitbox too
+  const ba=sub(b,a),pa=sub(p,a),cb=sub(c,b),pb=sub(p,b),ac=sub(a,c),pc=sub(p,c);
+  const nor=cross(ba,ac);
+  const sgn=Math.sign(dot(cross(ba,nor),pa))+Math.sign(dot(cross(cb,nor),pb))
+           +Math.sign(dot(cross(ac,nor),pc));
+  if(sgn<2){
+    const e2=(e,pe)=>{const h=clamp(dot(e,pe)/(dot(e,e)||1e-9),0,1);
+      const q=sub(scl(e,h),pe);return dot(q,q);};
+    return Math.sqrt(Math.min(e2(ba,pa),e2(cb,pb),e2(ac,pc)));
+  }
+  return Math.abs(dot(nor,pa))/Math.sqrt(dot(nor,nor)||1e-9);
+}
 function nearestPart(point,segs){
   let d=1e9,tag=null;
   if(!segs)return {d,tag};
   for(const list of[segs.soft,segs.hard])for(const s of list){
     const di=sdRCjs(point,s[0],s[1],s[2],s[3]);
     if(di<d){d=di;tag=s[5];}
+  }
+  if(segs.wingStrip)for(let wi=0;wi<2;wi++){
+    const ws=segs.wingStrip[wi]; if(!ws)continue;
+    const q=ws.pts;
+    const dm=Math.min(udTriJs(point,q[0],q[1],q[2]),
+                      udTriJs(point,q[0],q[2],q[3]),
+                      udTriJs(point,q[0],q[3],q[4]))-ws.th;
+    if(dm<d){d=dm;tag='wing'+wi;}
   }
   return {d,tag};
 }
@@ -2562,6 +2628,7 @@ addEventListener('resize',resize);
 
 // ---------- main loop ----------
 const palBuf=new Float32Array(36), spineBuf=new Float32Array(16);
+const wingBuf=new Float32Array(40); // 2 wings × 5 strip points
 { // quest intro: the body plan is the briefing
   const tells=[];
   if(SPECIES.wings)tells.push('WINGS — IT DIVES FROM ABOVE. BREAK THEM TO GROUND IT');
@@ -2663,6 +2730,15 @@ function frame(now){
   gl.uniform4fv(U.uLook,[pL[0],pL[1],pL[2],0,bL[0],bL[1],bL[2],0]);
   gl.uniform4fv(U.uA,segsA);gl.uniform4fv(U.uB,segsB);
   gl.uniform4fv(U.uGrpA,grpA);gl.uniform4fv(U.uGrpB,grpB);
+  wingBuf.fill(0);
+  const wStrip=boss.segs&&boss.segs.wingStrip;
+  if(wStrip)for(let wi=0;wi<2;wi++){
+    const ws=wStrip[wi]; if(!ws)continue;
+    for(let k2=0;k2<5;k2++)wingBuf.set(ws.pts[k2],(wi*5+k2)*4);
+    wingBuf[wi*20+3]=ws.th;                        // slot 0/5 .w: per-wing thickness
+  }
+  wingBuf[7]=boss.P.flameWings?6:2;                // slot 1 .w: membrane material
+  gl.uniform4fv(U.uWing,wingBuf);
   gl.uniform3fv(U.uPal,palBuf);
   gl.drawArrays(gl.TRIANGLES,0,3);
   hudTick();

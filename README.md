@@ -58,10 +58,12 @@ briefs the tells.
   working hinge, tooth rows that ride the jaw, and a dark wet maw visible
   through the gape. Bites gape wide through the wind-up tell, hang open
   through the lunge, then *chomp* shut right as the strike lands.
-- **Wings are bat-plan anatomy**: humerus → radius → three webbed flight
-  fingers plus a wrist thumb-claw; folded they shingle along the flank,
-  airborne the flap travels outward (wrist lags shoulder, tips lag wrist)
-  while the membrane billows on the upstroke.
+- **Wings are bat-plan anatomy**: humerus → radius → three flight fingers
+  plus a wrist thumb-claw, and the membrane is a **solid sail** — a thin
+  triangle-SDF sheet webbing wrist, fingertips, and flank (dragon skin, not
+  strands), hittable like any other zone. Folded they shingle along the
+  flank; airborne the flap travels outward (wrist lags shoulder, tips lag
+  wrist). A broken wing's sail tears away, leaving sagging rag chords.
 - **Boss AI** rides the dynamics system: patrol → roar/aggro → bite, charge,
   jump-slam → **enrage** at 50% HP (f up, ζ down, eyes glow) → exhausted rest
   (free damage window) → flees at 20% to sleep it off → carve the corpse.

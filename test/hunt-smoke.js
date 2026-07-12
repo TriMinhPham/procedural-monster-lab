@@ -300,8 +300,17 @@ vm.runInContext(`
   // 5e. wing break: webbing torn on the struck side, grounded for good, and a
   // mid-air break crashes the monster down into a knockdown opening
   if (SPECIES.wings) {
+    // spread the wings: folded sails hug the flank, where the body wins the probe
+    boss.wOpen = 1; boss.flap = 0;
     buildSkeleton(boss, 1 / 60);
-    const w0 = boss.segs.soft.filter(s => s[5] === 'wing0').length;
+    // intact wings carry a solid sail, and the sail itself is a hitbox
+    if (!boss.segs.wingStrip[0] || !boss.segs.wingStrip[0].th || !boss.segs.wingStrip[1])
+      throw new Error('intact wings missing their membrane sail');
+    const q = boss.segs.wingStrip[0].pts;
+    const midSail = scl(add(add(q[0], q[1]), q[2]), 1 / 3);
+    const hitSail = nearestPart(midSail, boss.segs);
+    if (hitSail.tag !== 'wing0')
+      throw new Error('membrane sail not hittable, tagged: ' + hitSail.tag);
     const nodesW = game.carveNodes.length;
     game.parts.wings = 5;
     boss.air = .6; // mid-swoop when the wing gives out
@@ -312,8 +321,10 @@ vm.runInContext(`
     if (game.ai.state !== 'tired') throw new Error('mid-air wing break did not crash the boss');
     if (game.carveNodes.length !== nodesW + 1) throw new Error('no wing carve node');
     buildSkeleton(boss, 1 / 60);
-    const w1 = boss.segs.soft.filter(s => s[5] === 'wing1').length;
-    if (w1 >= w0) throw new Error('broken wing not visibly torn: ' + w0 + '→' + w1);
+    if (boss.segs.wingStrip[1]) throw new Error('broken wing kept its membrane sail');
+    if (!boss.segs.wingStrip[0]) throw new Error('intact wing lost its membrane sail');
+    if (!boss.segs.soft.some(s => s[5] === 'wing1'))
+      throw new Error('broken wing has no rag strands');
     flee();
     if (boss.flyOK) throw new Error('broken-winged boss still flies to safety');
     game.ai.fled = false; game.ai.state = 'hunt'; game.ai.tiredT = 0;
