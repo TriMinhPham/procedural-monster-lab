@@ -110,6 +110,10 @@
   .bd-row button:hover{color:var(--ink);border-color:var(--amber-soft);}
   .bd-foot{margin-top:14px;font-size:9px;letter-spacing:.12em;color:var(--ink-dim);line-height:1.9;text-align:center;}
   @media (max-width:700px){ .brand .t2{display:none;} .hints{display:none;} }
+  /*PAD*/ #pad-actions{position:fixed;right:14px;bottom:14px;display:none;gap:7px;z-index:5;pointer-events:auto;}
+  /*PAD*/ #pad-actions button{width:44px;height:44px;padding:0;border-radius:999px;background:var(--glass);
+    border:1px solid rgba(236,229,214,.25);color:var(--ink);font:9px var(--mono);letter-spacing:.03em;touch-action:none;}
+  /*PAD*/ body.board #pad-actions{display:none!important;}
 </style>
 </head>
 <body>
@@ -1804,6 +1808,8 @@ function lockCam(dt){
 // ---------- input: WASD + orbit drag ----------
 const keys=new Set();
 let muted=false;
+/*PAD*/ const touchDevice=typeof window!=='undefined'&&'ontouchstart' in window;
+/*PAD*/ let padMove=[0,0],touchPad=null,stickUI=null;
 // 3-hit combo: snap · snap · lunging finisher — click during a strike to buffer the next
 const COMBO=[
   {kind:'slash',wind:.12,active:.16,rec:.26,imp:5.0,jaw:0, recoil:2.2,dmg:[16,22]},
@@ -1902,6 +1908,40 @@ function startAction(cr,n){
   if(n==='dash')cr.imp=add(cr.imp,scl(cr.fw,6.5));
   cr.act=n;cr.actT=0;cr._struck=false;
 }
+/*PAD*/ function makeStick(){
+  if(stickUI)return stickUI;
+  const base=document.createElement('div'),nub=document.createElement('div');
+  base.style.cssText='position:fixed;width:112px;height:112px;margin:-56px 0 0 -56px;pointer-events:none;z-index:4;background:rgba(21,20,17,.5);border:1px solid rgba(236,229,214,.25);border-radius:999px;';
+  nub.style.cssText='position:fixed;width:48px;height:48px;margin:-24px 0 0 -24px;pointer-events:none;z-index:4;background:rgba(21,20,17,.5);border:1px solid rgba(236,229,214,.25);border-radius:999px;';
+  document.body.appendChild(base);document.body.appendChild(nub);stickUI={base,nub};return stickUI;
+}
+/*PAD*/ function stickAt(x,y){const u=makeStick();u.base.style.left=x+'px';u.base.style.top=y+'px';u.nub.style.left=x+'px';u.nub.style.top=y+'px';}
+/*PAD*/ function clearStick(){if(!touchPad)return;padMove=[0,0];if(stickUI){stickUI.base.style.display='none';stickUI.nub.style.display='none';}touchPad=null;}
+/*PAD*/ function updateStick(x,y){
+  if(!touchPad)return;const dx=x-touchPad.ox,dy=y-touchPad.oy,L=Math.hypot(dx,dy),m=56,s=L>m?m/L:1;
+  const px=dx*s,py=dy*s;padMove=[px/m,-py/m];
+  const u=makeStick();u.base.style.display='block';u.nub.style.display='block';u.nub.style.left=touchPad.ox+px+'px';u.nub.style.top=touchPad.oy+py+'px';
+}
+/*PAD*/ const padPrev={};
+/*PAD*/ function padButton(p,i){return !!(p&&p.buttons&&p.buttons[i]&&p.buttons[i].pressed);}
+/*PAD*/ function pollGamepad(){
+  let p=null;try{if(typeof navigator!=='undefined'&&navigator.getGamepads)p=navigator.getGamepads()[0];}catch(e){}
+  const b=i=>padButton(p,i), edge=i=>b(i)&&!padPrev[i];
+  // pad owns 'q' only while IT holds it — never wipe a keyboard-held potion
+  const dropQ=()=>{if(padPrev.qHeld){keys.delete('q');padPrev.qHeld=false;}};
+  if(!p){dropQ();for(let i=0;i<17;i++)padPrev[i]=false;return [0,0];}
+  const ax=+p.axes[0]||0,ay=+p.axes[1]||0,rx=+p.axes[2]||0,ry=+p.axes[3]||0;
+  if(!game.board&&!player.dead){
+    if(Math.hypot(rx,ry)>.22){cam.az-=rx*.055;cam.el=clamp(cam.el+ry*.04,.10,1.25);}
+    if(edge(0))playerAttack(); if(edge(1))playerDash(); if(edge(2))startAction(player,'jump');
+    if(edge(3))startPotion();
+    if(b(3)){keys.add('q');padPrev.qHeld=true;}else dropQ();
+    if(edge(5))tryCarve();
+    if(edge(4)){cam.lock=!cam.lock;log(cam.lock?'LOCK-ON':'LOCK OFF',true);}
+  }else dropQ();
+  for(let i=0;i<17;i++)padPrev[i]=b(i);
+  const L=Math.hypot(ax,ay);return L>.22?[ax,ay]:[0,0];
+}
 addEventListener('keydown',e=>{
   audioUnlock();
   const k=e.key===' '?'space':e.key.toLowerCase();
@@ -1923,12 +1963,15 @@ function updInput(dt){
   if(player.stamRegenT>0)player.stamRegenT=Math.max(0,player.stamRegenT-dt);
   else if(player.stam<player.stamMax)
     player.stam=Math.min(player.stamMax,player.stam+24*dt);
-  if(game.board)return; /*SAGA — hands off the hunter while the board is up*/
+  const gp= pollGamepad(); /*PAD*/
+  if(game.board){player.moveDir=V();return;} /*SAGA — hands off the hunter while the board is up*/
   const {right,fw}=cam._b||camBasis();
   const f2=nrm([fw[0],0,fw[2]]), r2=nrm([right[0],0,right[2]]);
   let d=V();
   if(keys.has('w'))d=add(d,f2); if(keys.has('s'))d=sub(d,f2);
   if(keys.has('d'))d=add(d,r2); if(keys.has('a'))d=sub(d,r2);
+  /*PAD*/ if(gp[0]||gp[1]){d=add(d,scl(r2,gp[0]));d=sub(d,scl(f2,gp[1]));}
+  /*PAD*/ if(padMove[0]||padMove[1]){d=add(d,scl(r2,padMove[0]));d=add(d,scl(f2,padMove[1]));}
   player.moveDir=game.carving?V():(len(d)>.1?nrm(d):V());
 }
 
@@ -1938,11 +1981,13 @@ let dragDist=0,pinch0=0,wasPinch=false;
 canvas.addEventListener('pointerdown',e=>{
   audioUnlock();
   canvas.setPointerCapture(e.pointerId);
+  /*PAD*/ if(e.pointerType==='touch'&&e.clientX<innerWidth*.4){touchPad={id:e.pointerId,ox:e.clientX,oy:e.clientY};stickAt(e.clientX,e.clientY);return;}
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   dragDist=0;
   if(pointers.size===2){wasPinch=true;const a=[...pointers.values()];pinch0=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)*cam.dist;}
 });
 canvas.addEventListener('pointermove',e=>{
+  /*PAD*/ if(touchPad&&touchPad.id===e.pointerId){updateStick(e.clientX,e.clientY);return;}
   const p=pointers.get(e.pointerId); if(!p)return;
   const dx=e.clientX-p.x,dy=e.clientY-p.y;
   p.x=e.clientX;p.y=e.clientY;
@@ -1956,12 +2001,13 @@ canvas.addEventListener('pointermove',e=>{
   if(dragDist>6){cam.az-=dx*.0055;cam.el=clamp(cam.el+dy*.004,.10,1.25);}
 });
 canvas.addEventListener('pointerup',e=>{
+  /*PAD*/ if(touchPad&&touchPad.id===e.pointerId){clearStick();return;}
   pointers.delete(e.pointerId);
   if(pointers.size===0){const wp=wasPinch;wasPinch=false;if(wp)return;}
   else return;
   if(dragDist<=6)playerAttack();
 });
-canvas.addEventListener('pointercancel',e=>pointers.delete(e.pointerId));
+canvas.addEventListener('pointercancel',e=>{ /*PAD*/ if(touchPad&&touchPad.id===e.pointerId){clearStick();return;} pointers.delete(e.pointerId);});
 canvas.addEventListener('wheel',e=>{
   e.preventDefault();
   cam.dist=clamp(cam.dist*Math.exp(e.deltaY*.0011),3.2,15);
@@ -2244,6 +2290,18 @@ const game={
 game.foot.fill(-99);
 game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head,
               wings:game.parts.wings};
+/*PAD*/ function setupTouchActions(){
+  if(!touchDevice||!document.body)return;
+  const box=document.createElement('div');box.id='pad-actions';
+  const add=(label,down,up)=>{const b=document.createElement('button');b.textContent=label;
+    b.addEventListener('touchstart',e=>{e.preventDefault();if(!game.board&&!player.dead)down();},{passive:false});
+    if(up)b.addEventListener('touchend',e=>{e.preventDefault();up();},{passive:false});
+    if(up)b.addEventListener('touchcancel',up);box.appendChild(b);};
+  add('DASH',playerDash);add('JUMP',()=>startAction(player,'jump'));
+  add('POTION',()=>{keys.add('q');startPotion();},()=>keys.delete('q'));
+  add('CARVE',tryCarve);document.body.appendChild(box);
+}
+/*PAD*/ setupTouchActions();
 
 // ---------- biome scenery: static mat-9 set dressing on the arena ring ----------
 function buildScenery(){ /*SCENERY*/
