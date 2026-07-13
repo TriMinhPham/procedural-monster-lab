@@ -166,6 +166,22 @@ vm.runInContext(`
     __check('rathalos-landed');
   }
 
+  if (PRESETS.veil) { // reef-walker: scuttle, radial maw attack, spiral tail, no flight
+    initCreature('veil'); st.roam = false; st.target = [3, 0, -2];
+    __drive(500); __check('veil-walk');
+    if (st.pairsN !== 3) throw new Error('veil should have 3 leg pairs: ' + st.pairsN);
+    startAction('attack'); __drive(15);
+    if (st.jawEnv < 0.5) throw new Error('veil radial maw did not open: ' + st.jawEnv);
+    __check('veil-attack'); __drive(120);
+    startAction('jump'); __drive(20);
+    if (!(st.jumpY > 0.02 || st.jumpVy > 0)) throw new Error('veil no jump lift');
+    __drive(140); __check('veil-jump-landed');
+    morphTo('rex'); __drive(120); __check('morph-veil-to-rex');
+    if (P !== PRESETS.rex) throw new Error('morph did not converge to rex');
+    morphTo('veil'); __drive(120); __check('morph-back-to-veil');
+    if (P !== PRESETS.veil || st.pairsN !== 3) throw new Error('morph did not converge back to veil');
+  }
+
   if (PRESETS.sparky) { // pocket-monster trio: walk, jump, jaw, and a chibi morph
     for (const cute of ['sparky', 'blaze', 'sprout']) {
       initCreature(cute); st.roam = false; st.target = [3, 0, -2];

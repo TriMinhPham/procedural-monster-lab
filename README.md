@@ -128,10 +128,11 @@ Open `index.html` in any browser with WebGL2 — no build step, no dependencies.
 - **Click the ground** to call the monster somewhere — winged specimens **fly** to far calls
 - **A** attack · **space** jump · **D** dash · **R** rest (or use the panel buttons)
 - **Drag** to orbit, **scroll / pinch** to zoom
-- Panel: specimens (skink · beast · bug · rex · wyvern · **rathalos** · drake in visual-lab),
+- Panel: specimens (skink · beast · bug · rex · wyvern · **rathalos** · drake ·
+  diablos · **veil** · pocket starters in visual-lab),
   dynamics tuning (f / ζ / r), morphs (leg length, plumpness,
   **leg pairs 1–4**, **posture** sprawl↔upright), dress-up (spikes, hat, **wings**)
-  — deep-link a specimen with `visual-lab.html?preset=rathalos`
+  — deep-link a specimen with `visual-lab.html?preset=veil`
 
 ### Pocket monsters (visual-lab)
 
@@ -156,8 +157,10 @@ Built following "The Procedural Monster Manual" playbook:
   sprawled legs, the beast's 3-bone "Mammal Problem" zigzag (solved by IK-ing hip→ankle and
   hanging the metatarsal below), the bug's six spider legs / antennae / pedipalps, the
   **rex** (biped gait on one leg pair, tiny 2-bone arms, hinged jaw with teeth, counterweight
-  tail), the **wyvern** (bird group: biped plus wings), and **rathalos** (MH flying wyvern:
-  crimson plates, crown crests, flame-wing membranes, spiked tail club).
+  tail), the **wyvern** (bird group: biped plus wings), **rathalos** (MH flying wyvern:
+  crimson plates, crown crests, flame-wing membranes, spiked tail club), and **veil**
+  (reef-walker cnidarian: jellyfish bell, stalk eyes, radial maw, rib sails, belly
+  lanterns, corkscrew tail — deliberately *not* a dragon; `visual-lab.html?preset=veil`).
 - **Wings & flight** — wings fold flush along the body on the ground and flap open in the
   air, per the guide's bird-group note. Flight is a locomotion mode: far target → take off,
   climb to cruise height with a wingbeat heave, tuck the feet, and land near the call.
