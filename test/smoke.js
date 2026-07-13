@@ -166,16 +166,30 @@ vm.runInContext(`
     __check('rathalos-landed');
   }
 
-  if (PRESETS.veil) { // reef-walker: scuttle, radial maw attack, spiral tail, no flight
-    initCreature('veil'); st.roam = false; st.target = [3, 0, -2];
-    __drive(500); __check('veil-walk');
+  if (PRESETS.veil) { // reef-walker: jet-pulse gait + REEL / JET / SPIRAL
+    initCreature('veil'); st.roam = false; st.target = [4, 0, -3];
+    if (!P.reef) throw new Error('veil missing reef flag');
+    let maxPulse = 0, maxHover = 0;
+    for (let i = 0; i < 240; i++) {
+      __drive(1);
+      maxPulse = Math.max(maxPulse, st.pulse);
+      maxHover = Math.max(maxHover, st.hover);
+    }
+    __check('veil-walk');
     if (st.pairsN !== 3) throw new Error('veil should have 3 leg pairs: ' + st.pairsN);
-    startAction('attack'); __drive(15);
-    if (st.jawEnv < 0.5) throw new Error('veil radial maw did not open: ' + st.jawEnv);
-    __check('veil-attack'); __drive(120);
-    startAction('jump'); __drive(20);
-    if (!(st.jumpY > 0.02 || st.jumpVy > 0)) throw new Error('veil no jump lift');
-    __drive(140); __check('veil-jump-landed');
+    if (maxPulse < 0.55) throw new Error('veil never jet-pulsed: ' + maxPulse);
+    if (maxHover < 0.04) throw new Error('veil never hovered: ' + maxHover);
+    startAction('attack'); __drive(20);
+    if (st.jawEnv < 0.45) throw new Error('veil REEL maw did not open: ' + st.jawEnv);
+    if (st.lanternF < 1.2) throw new Error('veil REEL lanterns did not flare: ' + st.lanternF);
+    __check('veil-reel'); __drive(80);
+    startAction('dash'); __drive(25);
+    if (st.spin < 1) throw new Error('veil SPIRAL never spun: ' + st.spin);
+    if (st.act !== 'dash' && st.act !== null) throw new Error('veil bad act after spiral: ' + st.act);
+    __check('veil-spiral'); __drive(80);
+    startAction('jump'); __drive(25);
+    if (!(st.jumpY > 0.02 || st.jumpVy > 0)) throw new Error('veil JET no lift');
+    __drive(160); __check('veil-jet-landed');
     morphTo('rex'); __drive(120); __check('morph-veil-to-rex');
     if (P !== PRESETS.rex) throw new Error('morph did not converge to rex');
     morphTo('veil'); __drive(120); __check('morph-back-to-veil');
