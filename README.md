@@ -59,10 +59,10 @@ The quest banner briefs the tells.
   stays orbit/tap-attack, with a glass DASH·JUMP·POTION·CARVE cluster; on a
   pad the sticks move/orbit, **A** attack · **B** dash · **X** jump ·
   **Y** hold-potion · **RB** carve · **LB** lock-on
-- **You hunt as a hunter** — an armored capsule-knight (helmet, pauldrons, no
-  face) built from the same limb class as the monsters: slash · backhand ·
-  overhead heavy, the swings driven by arm IK, the blade swept as a 5-point
-  probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
+- **You hunt as a hunter** — an upright plantigrade capsule-knight (vertical
+  helm, shoulder shelf, breastplate, boots; no face) built from the same limb
+  class as the monsters: slash · backhand · overhead heavy, the swings driven
+  by arm IK, the blade swept as a 5-point probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
   and attacking out of a dash cancels it into the first slash with the
   momentum folded in.
 - **Stamina is the leash** — dashes and the heavy finisher spend it, regen
@@ -129,10 +129,10 @@ Open `index.html` in any browser with WebGL2 — no build step, no dependencies.
 - **A** attack · **space** jump · **D** dash · **R** rest (or use the panel buttons)
 - **Drag** to orbit, **scroll / pinch** to zoom
 - Panel: specimens (skink · beast · bug · rex · wyvern · **rathalos** · drake ·
-  diablos · veil · **fury** · pocket starters in visual-lab),
+  diablos · veil · **fury** · pocket starters · **Ashbeak** 3-phase line in visual-lab),
   dynamics tuning (f / ζ / r), morphs (leg length, plumpness,
   **leg pairs 1–4**, **posture** sprawl↔upright), dress-up (spikes, hat, **wings**)
-  — deep-link a specimen with `visual-lab.html?preset=fury`
+  — deep-link a specimen with `visual-lab.html?preset=fury` or `?preset=cub`
 
 ### Pocket monsters (visual-lab)
 
@@ -148,6 +148,19 @@ cel renderer, and the system speaks fluent Pokémon. Three original starters in
 New cute-grammar knobs any preset can use: `eye` (scale), `earScale` +
 `earTip` (tall ink-dipped ears), `cheeks` (accent studs), `bulb` (seed bulb +
 leaf fan). `?preset=sparky`, `blaze`, `sprout` to deep-link.
+
+### Three-phase transform — Ashbeak (visual-lab)
+
+One species, three full presets that **morph** into each other (numbers lerp,
+features fade in/out, leg pairs rebuild mid-blend):
+
+| I · CUB | II · BRUTE | III · APEX |
+|---|---|---|
+| Soft juvenile quadruped, big eyes, cel-shaded | Armored adult — horns, plates, heavy forelegs, vestigial wings | Flying apex — biped, flame-wing sails, crown crests, tail club |
+
+- **E** or the **TRANSFORM** button advances CUB → BRUTE → APEX → CUB
+- Panel phase strip jumps to any stage; specimen buttons work the same
+- Deep-link: `visual-lab.html?preset=cub` · auto-cycle demo: `?preset=cub&phases=1`
 
 ## How it works
 

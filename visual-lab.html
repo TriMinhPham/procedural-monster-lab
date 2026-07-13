@@ -26,6 +26,10 @@
   .hints{position:fixed;left:20px;bottom:16px;font-family:var(--mono);font-size:10px;
     letter-spacing:.1em;color:var(--ink-dim);pointer-events:none;user-select:none;}
   .hints span{color:var(--ink);}
+  #phaseHud{position:fixed;left:20px;top:58px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.18em;color:var(--amber);pointer-events:none;user-select:none;
+    text-shadow:0 1px 8px rgba(0,0,0,.55);opacity:0;transition:opacity .35s ease;}
+  #phaseHud.on{opacity:1;}
 
   .panel{position:fixed;right:16px;top:16px;width:236px;max-height:calc(100% - 32px);
     overflow-y:auto;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -80,7 +84,8 @@
   <div class="t1">PROCEDURAL <b>MONSTER</b> LAB</div>
   <div class="t2">SDF TUBE METHOD · IK GAIT · SECOND-ORDER DYNAMICS</div>
 </div>
-<div class="hints"><span>CLICK</span> GROUND TO CALL IT · <span>DRAG</span> ORBIT · <span>SCROLL</span> ZOOM · <span>A</span> ATTACK · <span>␣</span> JUMP · <span>D</span> DASH · <span>R</span> REST</div>
+<div id="phaseHud"></div>
+<div class="hints"><span>CLICK</span> GROUND TO CALL IT · <span>DRAG</span> ORBIT · <span>SCROLL</span> ZOOM · <span>A</span> ATTACK · <span>␣</span> JUMP · <span>D</span> DASH · <span>R</span> REST · <span>E</span> TRANSFORM</div>
 
 <button class="ptoggle" id="ptoggle" aria-label="Toggle controls">◧</button>
 <div class="panel" id="panel">
@@ -99,7 +104,21 @@
     <button data-p="sparky">SPARKY</button>
     <button data-p="blaze">BLAZE</button>
     <button data-p="sprout">SPROUT</button>
+    <button data-p="cub">CUB</button>
+    <button data-p="brute">BRUTE</button>
+    <button data-p="apex">APEX</button>
   </div>
+
+  <div class="sect">PHASE · E</div>
+  <div class="prow" id="phases">
+    <button data-ph="cub">I CUB</button>
+    <button data-ph="brute">II BRUTE</button>
+    <button data-ph="apex">III APEX</button>
+  </div>
+  <div class="prow" style="margin-top:6px">
+    <button id="btnXform" style="flex:1">TRANSFORM ▸</button>
+  </div>
+  <div class="note" id="phaseNote">Ashbeak line — soft juvenile → armored adult → flying apex. E advances phase.</div>
 
   <div class="sect">ACTIONS · A ␣ D R</div>
   <div class="prow" id="actions">
@@ -352,6 +371,48 @@ const PRESETS={
     undulate:0, tailN:3, tailLen:.3, bob:.03, post:.7,
     antennae:false, palps:false, spikesDefault:false,
     dyn:[2.5,.5,1.05], impact:.45, sway:.8, pal:'sprout', k:.075, toon:true
+  },
+  // ---- three-phase transform line (Ashbeak): CUB → BRUTE → APEX
+  // each phase is a full preset; TRANSFORM / E morphs to the next and wraps.
+  // Features grow in (jaw, plates, crests, wings) so the morph reads as evolution.
+  cub:{ // phase I — soft juvenile: stubby quadruped, big eyes, no armor
+    pairs:2, mode:'zigzag',
+    bodyLen:.58, chestH:.36, hipH:.32, chestR:.18, midR:.19, hipR:.17,
+    neckLen:.16, neckUp:.12, headR:.155, headLen:.30, snout:.48,
+    eye:1.65, ears:true, earScale:1.15, jaw:true,
+    lu:.18, ll:.16, fs:.10, legR:.048, stance:[.28,.24], lead:[.12,-.08],
+    stepThresh:.18, stepDur:.12, stepH:.09, speed:1.95, stride:.38,
+    undulate:.02, tailN:4, tailLen:.55, bob:.04, post:.55,
+    antennae:false, palps:false, spikesDefault:false, wings:false,
+    dyn:[2.8,.42,1.25], impact:.5, sway:.85, pal:'cub', k:.07, toon:true
+  },
+  brute:{ // phase II — armored adult: heavy forequarters, plates, horns, still grounded
+    pairs:2, mode:'zigzag',
+    bodyLen:1.15, chestH:.72, hipH:.52, chestR:.30, midR:.26, hipR:.22,
+    neckLen:.28, neckUp:.06, headR:.20, headLen:.52, snout:.72,
+    eye:1.05, jaw:true, teeth:true, teethN:5, brow:true, muscle:true,
+    horns:true, plates:true, claws:3,
+    fore:{lu:.52, ll:.46, fs:.22, legR:.10, massMul:1.45},
+    lu:.34, ll:.30, fs:.20, legR:.065,
+    stance:[.42,.28], lead:[.24,-.12],
+    stepThresh:.36, stepDur:.16, stepH:.13, speed:2.05, stride:.82,
+    undulate:.01, tailN:7, tailLen:1.25, bob:.03, post:.78,
+    ears:false, antennae:false, palps:false, spikesDefault:true,
+    vestigialWings:true, tailSpikes:true, wings:false,
+    dyn:[1.9,.58,.85], impact:1.35, sway:1.05, dashMul:1.35, pal:'brute', k:.055
+  },
+  apex:{ // phase III — flying apex: biped, flame-wing sails, crown, tail club
+    pairs:1, mode:'zigzag', soloU:.76,
+    bodyLen:1.28, chestH:.78, hipH:.74, chestR:.30, midR:.26, hipR:.27,
+    neckLen:.34, neckUp:.16, headR:.20, headLen:.58, snout:.64,
+    eye:1.0, jaw:true, teeth:true, teethN:6, brow:true, muscle:true,
+    claws:3, plates:true, crests:true, flameWings:true, tailClub:true,
+    lu:.44, ll:.40, fs:.30, legR:.078, stance:[.26], lead:[.10],
+    stepThresh:.40, stepDur:.18, stepH:.20, speed:2.2, stride:.92,
+    undulate:0, tailN:8, tailLen:1.7, bob:.04, post:.95,
+    wings:true, wingScale:1.9,
+    ears:false, antennae:false, palps:false, spikesDefault:true, tailSpikes:true,
+    dyn:[2.05,.52,1.05], impact:1.3, sway:1, pal:'apex', k:.055
   }
 };
 
@@ -374,6 +435,10 @@ const PALETTES={
   sparky:['#f5c93f','#faf3d9','#e8a02e','#7a4a1e','#d94f30','#3a76c4'],
   blaze :['#f28f3f','#f9e7c0','#e2622f','#8a3b20','#57c4d8','#e8484f'],
   sprout:['#68c8a8','#eaf5dc','#3f9e7a','#1d4634','#e86a8a','#f2d16b'],
+  // ashbeak line: warm ash → scorched hide → solar gold apex
+  cub  :['#e8a878','#f5e8d0','#c47848','#6a3a28','#e8c060','#f0a040'],
+  brute:['#c45a32','#e8d0a8','#8a3828','#2a1410','#e8a040','#f06030'],
+  apex :['#e8b028','#f8e8b8','#c06020','#1a100c','#fff0a0','#ff4820'],
 };
 const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
 
@@ -437,8 +502,12 @@ function initCreature(name){
   if(name==='diablos')cam.dist=Math.max(cam.dist,9.2);
   if(name==='veil')cam.dist=Math.max(cam.dist,8.5);
   if(name==='fury')cam.dist=Math.max(cam.dist,9);
+  if(name==='brute')cam.dist=Math.max(cam.dist,8.5);
+  if(name==='apex')cam.dist=Math.max(cam.dist,9.2);
   if(CAMN[name])cam.dist=Math.min(cam.dist,CAMN[name]);
-  if(P.toon)toonOn=1; // pocket monsters read best cel-shaded
+  if(P.toon)toonOn=1; // pocket monsters + cub read best cel-shaded
+  // leave toon on when morphing *into* a toon form; phase-ups to brute/apex can drop it
+  if(PHASE_LINE.includes(name)&&!P.toon)toonOn=0;
   dyn.f=P.dyn[0]; dyn.z=P.dyn[1]; dyn.r=P.dyn[2];
   syncUI();
 }
@@ -448,8 +517,17 @@ function initCreature(name){
 // flags become 0..1 fades (blocks scale their radii through featF), leg pairs
 // and tail segments rebuild at integer crossings — same rule as the sliders.
 let morph=null;
-const CAMD={rex:8.5,wyvern:7.5,drake:8,rathalos:9,diablos:9.2,veil:8.5,fury:9};
-const CAMN={sparky:4.4,blaze:4.6,sprout:4.6}; // pocket monsters pull the camera in
+const CAMD={rex:8.5,wyvern:7.5,drake:8,rathalos:9,diablos:9.2,veil:8.5,fury:9,brute:8.5,apex:9.2};
+const CAMN={sparky:4.4,blaze:4.6,sprout:4.6,cub:4.8}; // pocket + juvenile pull the camera in
+// three-phase Ashbeak line: TRANSFORM / E cycles cub → brute → apex → cub
+const PHASE_LINE=['cub','brute','apex'];
+function phaseIndex(name){const i=PHASE_LINE.indexOf(name);return i<0?-1:i;}
+function transformPhase(dir=1){
+  const i=phaseIndex(presetName);
+  const from=i<0?0:i;
+  const next=PHASE_LINE[(from+dir+PHASE_LINE.length*8)%PHASE_LINE.length];
+  morphTo(next);
+}
 const BLEND_DEF={wingScale:1,dashMul:1,soloU:.5,teethN:3,eye:1,earScale:1,impact:1,sway:1,armLu:.48,armLl:.44,armR:.09};
 function blendPresets(A,B,e){
   const out={};
@@ -492,6 +570,7 @@ function morphTo(name){
   if(CAMD[name])cam.dist=Math.max(cam.dist,CAMD[name]);
   if(CAMN[name])cam.dist=Math.min(cam.dist,CAMN[name]);
   if(PRESETS[name].toon)toonOn=1;
+  else if(PHASE_LINE.includes(name))toonOn=0; // cub→brute/apex drops the chibi cel look
   syncUI();
 }
 
@@ -2007,12 +2086,18 @@ addEventListener('keydown',e=>{
   else if(k==='a')startAction('attack');
   else if(k==='d')startAction('dash');
   else if(k==='r')startAction('rest');
+  else if(k==='e')transformPhase(1);
   else if(k==='t'){toonOn=1-toonOn;syncUI();}
 });
 $('presets').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   morphTo(b.dataset.p); // specimens morph into each other (instant if reduced-motion)
 });
+$('phases').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b||!b.dataset.ph)return;
+  morphTo(b.dataset.ph);
+});
+$('btnXform').addEventListener('click',()=>transformPhase(1));
 $('rendermode').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   toonOn=+b.dataset.r;syncUI();
@@ -2029,6 +2114,20 @@ for(const name of Object.keys(PALETTES)){
 function syncUI(){
   document.querySelectorAll('#presets button').forEach(b=>
     b.classList.toggle('on',b.dataset.p===presetName));
+  document.querySelectorAll('#phases button').forEach(b=>
+    b.classList.toggle('on',b.dataset.ph===presetName));
+  const pi=phaseIndex(presetName);
+  const note=$('phaseNote');
+  if(note){
+    if(pi>=0)note.textContent='Ashbeak · phase '+(pi+1)+'/3 · '+presetName.toUpperCase()
+      +' — E / TRANSFORM advances'+(pi===2?' (wraps to cub)':' → '+PHASE_LINE[pi+1].toUpperCase());
+    else note.textContent='Ashbeak line — soft juvenile → armored adult → flying apex. Pick CUB or press E.';
+  }
+  const hud=$('phaseHud');
+  if(hud){
+    if(pi>=0){hud.textContent='PHASE '+(pi+1)+' / 3  ·  '+presetName.toUpperCase();hud.classList.add('on');}
+    else hud.classList.remove('on');
+  }
   document.querySelectorAll('.sw').forEach(b=>
     b.classList.toggle('on',b.dataset.pal===st.pal));
   $('ckSpikes').checked=st.spikes;$('ckHat').checked=st.hat;$('ckRoam').checked=st.roam;
@@ -2083,6 +2182,9 @@ if(qp.get('call')){ // scripted call, e.g. ?call=-4,0 — reproducible motion sh
 // ?preset=skink&morph=rex[,delay[,dur]] — scripted preset morph, reproducible shots
 const mm=(qp.get('morph')||'').split(',');
 let morphName=mm[0], morphAt=PRESETS[morphName]?(+mm[1]||1):0, morphDur=+mm[2]||0;
+// ?preset=cub&phases=1 — auto-cycle the Ashbeak line every ~2.4s (demo)
+let phaseAuto=qp.get('phases')==='1'||qp.get('phases')==='auto';
+let phaseNextAt=phaseAuto?2.2:0;
 const palBuf=new Float32Array(18);
 let last=performance.now();
 function frame(now){
@@ -2096,6 +2198,10 @@ function frame(now){
   resize();
 
   if(morphAt&&st.time>morphAt){morphTo(morphName);if(morph&&morphDur)morph.dur=morphDur;morphAt=0;}
+  if(phaseAuto&&!morph&&phaseNextAt&&st.time>phaseNextAt){
+    transformPhase(1); phaseNextAt=st.time+2.6;
+    if(morph)morph.dur=1.15; // slightly longer morph for readable phase shifts
+  }
   // sub-step the sim on slow frames (keeps T well under T_critical)
   const steps=dt>1/45?2:1;
   for(let i=0;i<steps;i++)buildSkeleton(dt/steps);

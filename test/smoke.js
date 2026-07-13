@@ -252,6 +252,47 @@ vm.runInContext(`
     if (P !== PRESETS.diablos) throw new Error('morph did not converge back to diablos');
   }
 
+  if (PRESETS.cub && PRESETS.brute && PRESETS.apex) {
+    // Ashbeak 3-phase transform: cub → brute → apex (and wrap)
+    for (const ph of ['cub', 'brute', 'apex']) {
+      initCreature(ph); st.roam = false; st.target = [3, 0, -2];
+      __drive(300); __check(ph + '-walk');
+      startAction('attack'); __drive(15);
+      if (st.jawEnv < 0.4) throw new Error(ph + ' jaw did not open: ' + st.jawEnv);
+      __check(ph + '-attack'); __drive(100);
+      startAction('jump'); __drive(20);
+      if (!(st.jumpY > 0.02 || st.jumpVy > 0)) throw new Error(ph + ': no jump lift');
+      __drive(140); __check(ph + '-jump');
+    }
+    // full chain morph: each phase must land exactly on the target preset
+    initCreature('cub'); st.roam = false; st.target = [st.leader[0], 0, st.leader[2]];
+    if (typeof transformPhase !== 'function') throw new Error('transformPhase missing');
+    transformPhase(1); __drive(120); __check('phase-cub-to-brute');
+    if (P !== PRESETS.brute || presetName !== 'brute')
+      throw new Error('phase I→II did not land on brute');
+    if (P.horns < 0.5 || P.plates < 0.5) throw new Error('brute armor features missing');
+    transformPhase(1); __drive(120); __check('phase-brute-to-apex');
+    if (P !== PRESETS.apex || presetName !== 'apex')
+      throw new Error('phase II→III did not land on apex');
+    if (!P.wings || P.crests < 0.5 || P.flameWings < 0.5)
+      throw new Error('apex flight/crown features missing');
+    if (st.pairsN !== 1) throw new Error('apex should be biped, pairs=' + st.pairsN);
+    transformPhase(1); __drive(120); __check('phase-apex-wrap-cub');
+    if (P !== PRESETS.cub || presetName !== 'cub')
+      throw new Error('phase III wrap did not land on cub');
+    // mid-phase retarget: start cub→brute, interrupt toward apex.
+    // (mid-blend can briefly exceed raw capsule budget while both feature
+    // sets are half-on — only assert finiteness mid-morph, budget at land.)
+    initCreature('cub'); st.roam = false;
+    morphTo('brute'); __drive(40);
+    if (!morph) throw new Error('phase morph ended early');
+    for (let i = 0; i < (nSoft + nHard) * 4; i++)
+      if (!isFinite(segsA[i]) || !isFinite(segsB[i]))
+        throw new Error('phase-mid: NaN in segments');
+    morphTo('apex'); __drive(120); __check('phase-retarget-done');
+    if (P !== PRESETS.apex || morph) throw new Error('phase retarget failed to apex');
+  }
+
   initCreature('bug'); buildLegs(4); st.wings = true; st.target = [4, 0, -3];
   __drive(400); __check('bug-8legs-winged');
   st.posture = 1; __drive(200); __check('bug-upright');
