@@ -303,21 +303,20 @@ const PRESETS={
     ears:false, antennae:false, palps:false, spikesDefault:false, wings:false,
     dyn:[2.2,.28,1.7], impact:.35, sway:1.5, dashMul:.4, pal:'veil', k:.07
   },
-  fury:{ // storm ape — TRUE BIPED (not drake's 2-pair knuckle-walker silhouette)
-    // free swinging arms, short upright torso, flat face, stub tail
-    pairs:1, mode:'zigzag', soloU:.92, ape:true, apeArms:true,
-    bodyLen:.48, chestH:1.18, hipH:1.08, chestR:.32, midR:.28, hipR:.26,
-    neckLen:.10, neckUp:.02, headR:.25, headLen:.30, snout:.28, // flat primate face
-    eye:1.2, jaw:true, teeth:true, teethN:4, brow:true, muscle:true, claws:2,
-    fists:true, shoulderRuff:true,
-    // free arms (not walking limbs — that's what made it look like Drake)
-    armLu:.52, armLl:.48, armR:.095,
-    lu:.46, ll:.42, fs:.16, legR:.09, // plantigrade-leaning biped legs
-    stance:[.30], lead:[.06],
-    stepThresh:.38, stepDur:.15, stepH:.22, speed:2.55, stride:.72,
-    undulate:0, tailN:2, tailLen:.22, bob:.09, post:.98, // stub counterweight only
-    ears:true, earScale:1.35, antennae:false, palps:false, spikesDefault:false, wings:false,
-    dyn:[2.9,.38,-.55], impact:1.9, sway:1.15, dashMul:2.4, pal:'fury', k:.052
+  fury:{ // storm ape — knuckle-walks on FOUR like a gorilla (not Drake: no wing-arms,
+    // no long snout/tail, short barrel torso, fist plants, rears up only for SLAM)
+    pairs:2, mode:'zigzag', ape:true,
+    bodyLen:.58, chestH:.82, hipH:.64, chestR:.34, midR:.30, hipR:.25,
+    neckLen:.09, neckUp:.0, headR:.24, headLen:.28, snout:.24, // flat face
+    eye:1.15, jaw:true, teeth:true, teethN:4, brow:true, muscle:true, claws:2,
+    fists:true, shoulderRuff:true, // fists on walking hands — still no wingArms
+    fore:{lu:.56, ll:.52, fs:.07, legR:.115, massMul:1.95}, // long arms, fist-plant (tiny fs)
+    lu:.32, ll:.28, fs:.12, legR:.075,                       // shorter crouching hind legs
+    stance:[.38,.28], lead:[.24,-.12],
+    stepThresh:.32, stepDur:.13, stepH:.14, speed:2.4, stride:.7,
+    undulate:0, tailN:2, tailLen:.18, bob:.06, post:.72, // stub only — not a whip tail
+    ears:true, earScale:1.3, antennae:false, palps:false, spikesDefault:false, wings:false,
+    dyn:[2.7,.4,-.45], impact:1.85, sway:1.2, dashMul:2.3, pal:'fury', k:.052
   },
   // ---- pocket monsters: the chibi grammar is head ≈ half the body, eyes a
   // third of the head, stubby bent legs, bouncy dynamics, goopy smin, toon on
@@ -653,12 +652,14 @@ function simulate(dt){
   }
   st.rest+=((st.restOn?1:0)-st.rest)*Math.min(1,dt*(P.reef?1.4:2.2));
 
-  // ape rage / knuckle blend (outside action envelopes)
+  // ape: default is knuckle-walk on four (gorilla). only SLAM wind-up / leap rear up.
   if(P.ape){
     if(!st.act){st.armLift*=Math.exp(-6*dt);st.fistSlam*=Math.exp(-5*dt);}
     st.rage*=Math.exp(-.45*dt);
-    const knWant=(st.act==='dash'||st.speedN>.62)?1:(st.speedN>.3?.45:st.rest*.2);
-    st.knuckle+=(knWant-st.knuckle)*Math.min(1,dt*3.5);
+    const rearUp=Math.max(st.armLift,st.jumpY>.08?.75:0,st.fistSlam>.55?.25:0);
+    // idle/walk/charge live on the knuckles; rest sits a little lower
+    const knWant=st.restOn?.4:clamp(1-rearUp,.2,1);
+    st.knuckle+=(knWant-st.knuckle)*Math.min(1,dt*4);
   }else{
     st.armLift*=Math.exp(-8*dt); st.fistSlam*=Math.exp(-8*dt);
     st.rage*=Math.exp(-8*dt); st.knuckle*=Math.exp(-8*dt);
@@ -720,8 +721,9 @@ function simulate(dt){
   // height: posture & leg morphs, rest, jump, flight altitude
   const postHF=P.mode==='zigzag'?1:(0.85+0.5*st.posture)/(0.85+0.5*P.post);
   const legHF=P.mode==='zigzag'?(1+(st.legScale-1)*.8):1;
-  // knuckle drop: ape lowers the chest onto its fists when charging / sprinting
-  st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest)*(P.ape?1-st.knuckle*.22:1);
+  // knuckle-walk: chest rides low on the fists; SLAM rear-up lifts it
+  st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest)
+    *(P.ape?1-st.knuckle*.30+st.armLift*.18:1);
   const groundY=P.chestH*st.hMul;
   st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY+(P.reef?st.hover:0);
   const speed=len(st.vel);
@@ -767,9 +769,9 @@ function simulate(dt){
   const bobTrot=Math.sin(st.phase*Math.PI*4)*P.bob*st.speedN*(1-st.air);
   const bobGal=Math.max(0,Math.sin(st.phase*Math.PI*2+Math.PI))*P.bob*2.2*st.speedN*(1-st.air);
   const bobReef=P.reef?(st.pulse*.09*(1-st.rest)+Math.sin(st.pulsePh)*.02):0;
-  // biped ape: heavy single-beat bound (no quad gallop available)
-  const bobApe=P.ape?Math.abs(Math.sin(st.phase*Math.PI*2))*P.bob*2.4*st.speedN*(1-st.air)*(1-st.knuckle*.4):0;
-  const bobY=(P.reef?bobReef:P.ape?bobApe:bobTrot*(1-g)+bobGal*g)
+  // ape knuckle-walk still uses the quad gallop path (pairs=2); extra shoulder heave
+  const bobApe=P.ape?Math.sin(st.phase*Math.PI*2)*.02*st.knuckle*st.speedN:0;
+  const bobY=(P.reef?bobReef:bobTrot*(1-g)+bobGal*g)+bobApe
             +Math.sin(t*1.7)*.006*(1+st.rest*1.6)                    // breathing
             +st.air*Math.sin(st.flap)*.05;                           // wingbeat heave
   st.chest=[chestS[0],chestS[1]+bobY,chestS[2]];
@@ -861,6 +863,15 @@ function simulate(dt){
   const makeTo=(leg,home)=>clampFoot(add(home,scl(st.vel,overshoot)),leg,false);
   const tucked=st.air>.5||st.jumpY>.14||(P.reef&&(st.pulse>.7||st.act==='dash'));
   for(const leg of st.legs){
+    // ape rears up for SLAM / LEAP: hands leave the ground (bipedal display)
+    if(P.ape&&leg.u<.5&&(st.armLift>.02||st.fistSlam>.02||st.jumpY>.1)){
+      const raised=add(spinePt(leg.u),add(scl(fw,-.1+st.fistSlam*.7+st.jumpY*.15),
+        add(scl(side,leg.s*(.28+.1*st.armLift)),
+          V(0,.15+.55*st.armLift-.45*st.fistSlam+st.jumpY*.3,0))));
+      leg.foot=mix(leg.foot,raised,Math.min(1,dt*14));
+      leg.stepping=false; leg.cool=0;
+      continue;
+    }
     if(tucked){ // feet fold under in flight / mid-jump / reef jet
       const limb=P.fore&&leg.u<.5?P.fore:P;
       const tuckAmt=P.reef?(st.act==='dash'?.55:.38):.42;
@@ -870,9 +881,12 @@ function simulate(dt){
       leg.stepping=false;
       continue;
     }
-    // biped ape: wider plant during knuckle charge (only hind feet walk)
+    // gorilla knuckle-walk: fore hands plant wide/forward, hind lag under the hip
     let lead=leg.lead*(1-.7*st.rest), stance=leg.stance*stanceMul;
-    if(P.ape){ lead*=1-st.knuckle*.25; stance*=1+.35*st.knuckle; }
+    if(P.ape){
+      if(leg.u<.5){ lead+=.06*st.knuckle; stance*=1.1+.15*st.knuckle; }
+      else{ lead-=.04*st.knuckle; stance*=1+.1*st.knuckle; }
+    }
     const home=add(add(spinePt(leg.u),scl(fw,lead)), scl(side,leg.s*stance));
     home[1]=restY;
     if(leg.stepping){
@@ -1257,62 +1271,6 @@ function buildSkeleton(dt){
     S(shA,el,.05,.04,2,soft); S(el,hd,.04,.025,2,soft);
   }
 
-  // free ape arms — NOT gait legs (that shared Drake's silhouette). hang / swing /
-  // overhead wind-up / ground slam / knuckle-plant all drive one hand target.
-  featF=FB(P.apeArms);
-  if(P.apeArms){
-    const alu=(P.armLu||.48)*ls, all=(P.armLl||.44)*ls, ar=(P.armR||.09)*rs*(1+st.rage*.12);
-    for(const s of[1,-1]){
-      const sh=add(chestSh,add(scl(sideR,s*P.chestR*rs*1.05),
-        add(scl(upR,P.chestR*rs*.2),scl(fw,P.chestR*rs*.15))));
-      // idle hang + gait swing (opposite phase per side)
-      const swing=Math.sin(st.phase*Math.PI*2+(s>0?0:Math.PI))*st.speedN*.22*(1-st.knuckle);
-      let tgt=add(sh,add(scl(fw,.06+swing),add(scl(side,s*(.14+.05*st.speedN)),
-        V(0,-.62+st.rest*.12,0))));
-      // SLAM wind-up: both fists climb overhead
-      if(st.armLift>.01){
-        const upT=add(sh,add(scl(fw,-.08*st.armLift),add(scl(side,s*(.18+.12*st.armLift)),
-          V(0,.15+.55*st.armLift,0))));
-        tgt=mix(tgt,upT,st.armLift);
-      }
-      // SLAM strike / LEAP land: fists drive into the ground in front
-      if(st.fistSlam>.01){
-        const dn=add(chestSh,add(scl(fw,.2+.55*st.fistSlam),add(scl(side,s*.18),
-          V(0,0,0))));
-        dn[1]=.05+.08*(1-st.fistSlam);
-        tgt=mix(tgt,dn,st.fistSlam);
-      }
-      // CHARGE knuckle-walk: plant hands on the ground ahead of the feet
-      if(st.knuckle>.15&&st.armLift<.25&&st.fistSlam<.25){
-        const plant=add(chestSh,add(scl(fw,.42+.12*st.speedN),add(scl(side,s*.34),V(0,0,0))));
-        plant[1]=.05;
-        tgt=mix(tgt,plant,st.knuckle*.9);
-      }
-      // mid-leap: arms out for balance
-      if(st.jumpY>.1&&st.fistSlam<.2){
-        const fly=add(sh,add(scl(fw,.1),add(scl(side,s*(.35+.1*st.jumpY)),V(0,-.15,0))));
-        tgt=mix(tgt,fly,clamp(st.jumpY*1.2,0,.85));
-      }
-      const pole=add(scl(side,s*(.7+st.armLift*.4)),add(V(0,.25+st.armLift*.4,0),scl(fw,-.3+st.fistSlam*.8)));
-      const {knee:el,foot:hd}=solve2(sh,tgt,alu,all,pole);
-      S(sh,el,ar*1.75,ar*1.25,2,soft);
-      S(el,hd,ar*1.2,ar*.85,2,soft);
-      if(P.muscle){
-        S(add(sh,scl(upR,ar*.6)),mix(sh,el,.42),ar*2.4*(1+st.rage*.2),ar*1.3,1,soft);
-        S(el,el,ar*1.35,ar*1.35,2,soft);
-      }
-      if(P.fists){
-        const fR=ar*(1.85+.45*st.fistSlam+.25*st.rage);
-        S(hd,hd,fR,fR,2,soft);
-        for(let c=0;c<3;c++){
-          const off=scl(side,s*(c-1)*ar*.85);
-          const kn=add(hd,add(off,scl(fw,ar*.55)));
-          S(kn,add(kn,scl(fw,ar*.8)),ar*.32,.006,7,hard);
-        }
-      }
-    }
-  }
-
   // shoulder ruff — ape signature: thick cape of deltoid / mane mass
   featF=FB(P.shoulderRuff);
   if(P.shoulderRuff){
@@ -1338,22 +1296,36 @@ function buildSkeleton(dt){
       // the push/pull that fools a 2-bone solver into a 3-bone silhouette
       const hipJ=add(spine,add(scl(sideR,leg.s*bodyR*.55),scl(upR,-bodyR*.15)));
       const fs=limb.fs*ls;
-      // ape biped: shorter metatarsal so the foot reads plantigrade, not digitigrade dragon
-      const fsUse=fs*(P.ape?.55:1);
+      // ape: fist-plant fores (tiny fs) + plantigrade hind; elbows splay for knuckle-walk
+      const fsUse=fs*(P.ape&&leg.u>=.5?.55:1);
       const ankleT=add(leg.foot,add(V(0,fsUse*.85,0),scl(fw,-fsUse*.35)));
-      const pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
+      let pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0));
+      if(P.ape&&leg.u<.5) // gorilla elbows out to the side, not tucked like a dragon wing-arm
+        pole=add(scl(side,leg.s*(.85+.2*st.knuckle)),add(V(0,.45+st.armLift*.3,0),scl(fw,-.2+st.fistSlam)));
       const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
-      S(hipJ,knee,lr*1.5,lr,2,soft);
+      S(hipJ,knee,lr*1.5*(P.ape&&leg.u<.5?1.2:1),lr,2,soft);
       S(knee,ank,lr,lr*.8,2,soft);
-      S(ank,add(leg.foot,scl(fw,.09)),lr*.8,lr*.6,2,soft);
+      S(ank,add(leg.foot,scl(fw,P.ape&&leg.u<.5?.04:.09)),lr*.8,lr*.6,2,soft);
       featF=FB(P.muscle);
       if(P.muscle){ // thigh / shoulder mass + knee knuckle
-        const mR=bodyR*(leg.u>.5?.85:.62)*(limb.massMul||1)*(P.ape?1.15:1);
+        const mR=bodyR*(leg.u>.5?.85:.62)*(limb.massMul||1)*(1+(P.ape&&leg.u<.5?st.rage*.25:.1*!!P.ape));
         S(add(hipJ,scl(upR,bodyR*.30)),mix(hipJ,knee,.45),mR,lr*1.15,1,soft);
         S(knee,knee,lr*1.22,lr*1.22,2,soft);
       }
+      // fists on the walking hands (fore pair only) — NOT wing-claw hands
+      featF=FB(P.fists);
+      if(P.fists&&leg.u<.5){
+        const tip=add(leg.foot,scl(fw,.03));
+        const fR=lr*(1.75+.4*st.fistSlam+.2*st.rage);
+        S(tip,tip,fR,fR,2,soft);
+        for(let c=0;c<3;c++){
+          const off=scl(side,leg.s*(c-1)*lr*.85);
+          const kn=add(tip,add(off,scl(fw,lr*.45)));
+          S(kn,add(kn,scl(fw,lr*.65)),lr*.32,.006,7,hard);
+        }
+      }
       featF=FB(Math.min(P.claws||0,1));
-      if(P.claws){ // talons / toes fan from the foot (hands live on apeArms now)
+      if(P.claws&&!(P.fists&&leg.u<.5)){ // toes only on hind feet when fists own the hands
         const tip=add(leg.foot,scl(fw,.09));
         for(let c=0;c<P.claws;c++){
           const off=scl(side,leg.s*(c-(P.claws-1)/2)*lr*1.1);

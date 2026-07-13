@@ -196,14 +196,15 @@ vm.runInContext(`
     if (P !== PRESETS.veil || st.pairsN !== 3) throw new Error('morph did not converge back to veil');
   }
 
-  if (PRESETS.fury) { // storm ape: true biped + free arms — SLAM / CHARGE / LEAP
+  if (PRESETS.fury) { // storm ape: knuckle-walks on 4, rears up for SLAM
     initCreature('fury'); st.roam = false; st.target = [5, 0, -2];
     if (!P.ape) throw new Error('fury missing ape flag');
-    if (!P.apeArms) throw new Error('fury missing apeArms (must not share Drake fore-legs)');
-    if (P.fore) throw new Error('fury must not use fore walking limbs (Drake silhouette)');
-    if (P.pairs !== 1) throw new Error('fury must be true biped pairs=1, got ' + P.pairs);
+    if (!P.fore) throw new Error('fury needs fore walking arms for knuckle-walk');
+    if (P.wingArms) throw new Error('fury must not use Drake wingArms');
+    if (P.pairs !== 2) throw new Error('fury must knuckle-walk pairs=2, got ' + P.pairs);
     __drive(400); __check('fury-walk');
-    if (st.pairsN !== 1) throw new Error('fury should be biped (1 pair): ' + st.pairsN);
+    if (st.pairsN !== 2) throw new Error('fury should be 4-limbed: ' + st.pairsN);
+    if (st.knuckle < 0.5) throw new Error('fury should default to knuckle-walk: ' + st.knuckle);
     startAction('attack'); __drive(18);
     if (st.armLift < 0.4) throw new Error('fury SLAM no arm lift: ' + st.armLift);
     if (st.jawEnv < 0.4) throw new Error('fury SLAM no roar: ' + st.jawEnv);
