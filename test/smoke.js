@@ -196,11 +196,14 @@ vm.runInContext(`
     if (P !== PRESETS.veil || st.pairsN !== 3) throw new Error('morph did not converge back to veil');
   }
 
-  if (PRESETS.fury) { // storm ape: SLAM / CHARGE / LEAP with real arm + rage envelopes
+  if (PRESETS.fury) { // storm ape: true biped + free arms — SLAM / CHARGE / LEAP
     initCreature('fury'); st.roam = false; st.target = [5, 0, -2];
     if (!P.ape) throw new Error('fury missing ape flag');
+    if (!P.apeArms) throw new Error('fury missing apeArms (must not share Drake fore-legs)');
+    if (P.fore) throw new Error('fury must not use fore walking limbs (Drake silhouette)');
+    if (P.pairs !== 1) throw new Error('fury must be true biped pairs=1, got ' + P.pairs);
     __drive(400); __check('fury-walk');
-    if (st.pairsN !== 2) throw new Error('fury should be biped-quad (2 pairs): ' + st.pairsN);
+    if (st.pairsN !== 1) throw new Error('fury should be biped (1 pair): ' + st.pairsN);
     startAction('attack'); __drive(18);
     if (st.armLift < 0.4) throw new Error('fury SLAM no arm lift: ' + st.armLift);
     if (st.jawEnv < 0.4) throw new Error('fury SLAM no roar: ' + st.jawEnv);

@@ -303,19 +303,21 @@ const PRESETS={
     ears:false, antennae:false, palps:false, spikesDefault:false, wings:false,
     dyn:[2.2,.28,1.7], impact:.35, sway:1.5, dashMul:.4, pal:'veil', k:.07
   },
-  fury:{ // storm ape — rajang energy: top-heavy, fist-led, knuckle charge (not a dragon)
-    pairs:2, mode:'zigzag', ape:true,
-    bodyLen:.82, chestH:1.02, hipH:.70, chestR:.34, midR:.28, hipR:.22,
-    neckLen:.16, neckUp:.04, headR:.22, headLen:.40, snout:.52,
-    jaw:true, teeth:true, teethN:5, brow:true, muscle:true, claws:2,
-    fists:true, shoulderRuff:true, // ape signature pieces
-    fore:{lu:.58, ll:.50, fs:.16, legR:.12, massMul:1.85}, // wrecking-ball arms
-    lu:.40, ll:.36, fs:.24, legR:.085,                   // springy hind legs
-    stance:[.40,.26], lead:[.18,-.14],
-    stepThresh:.34, stepDur:.13, stepH:.18, speed:2.7, stride:.78,
-    undulate:0, tailN:4, tailLen:.48, bob:.07, post:.9,
-    ears:true, earScale:1.15, antennae:false, palps:false, spikesDefault:false, wings:false,
-    dyn:[2.9,.38,-.55], impact:1.9, sway:1.25, dashMul:2.4, pal:'fury', k:.052
+  fury:{ // storm ape — TRUE BIPED (not drake's 2-pair knuckle-walker silhouette)
+    // free swinging arms, short upright torso, flat face, stub tail
+    pairs:1, mode:'zigzag', soloU:.92, ape:true, apeArms:true,
+    bodyLen:.48, chestH:1.18, hipH:1.08, chestR:.32, midR:.28, hipR:.26,
+    neckLen:.10, neckUp:.02, headR:.25, headLen:.30, snout:.28, // flat primate face
+    eye:1.2, jaw:true, teeth:true, teethN:4, brow:true, muscle:true, claws:2,
+    fists:true, shoulderRuff:true,
+    // free arms (not walking limbs — that's what made it look like Drake)
+    armLu:.52, armLl:.48, armR:.095,
+    lu:.46, ll:.42, fs:.16, legR:.09, // plantigrade-leaning biped legs
+    stance:[.30], lead:[.06],
+    stepThresh:.38, stepDur:.15, stepH:.22, speed:2.55, stride:.72,
+    undulate:0, tailN:2, tailLen:.22, bob:.09, post:.98, // stub counterweight only
+    ears:true, earScale:1.35, antennae:false, palps:false, spikesDefault:false, wings:false,
+    dyn:[2.9,.38,-.55], impact:1.9, sway:1.15, dashMul:2.4, pal:'fury', k:.052
   },
   // ---- pocket monsters: the chibi grammar is head ≈ half the body, eyes a
   // third of the head, stubby bent legs, bouncy dynamics, goopy smin, toon on
@@ -449,7 +451,7 @@ function initCreature(name){
 let morph=null;
 const CAMD={rex:8.5,wyvern:7.5,drake:8,rathalos:9,diablos:9.2,veil:8.5,fury:9};
 const CAMN={sparky:4.4,blaze:4.6,sprout:4.6}; // pocket monsters pull the camera in
-const BLEND_DEF={wingScale:1,dashMul:1,soloU:.5,teethN:3,eye:1,earScale:1,impact:1,sway:1}; // fields read with a || default
+const BLEND_DEF={wingScale:1,dashMul:1,soloU:.5,teethN:3,eye:1,earScale:1,impact:1,sway:1,armLu:.48,armLl:.44,armR:.09};
 function blendPresets(A,B,e){
   const out={};
   const num=(o,k)=>{const v=o[k];
@@ -765,7 +767,9 @@ function simulate(dt){
   const bobTrot=Math.sin(st.phase*Math.PI*4)*P.bob*st.speedN*(1-st.air);
   const bobGal=Math.max(0,Math.sin(st.phase*Math.PI*2+Math.PI))*P.bob*2.2*st.speedN*(1-st.air);
   const bobReef=P.reef?(st.pulse*.09*(1-st.rest)+Math.sin(st.pulsePh)*.02):0;
-  const bobY=(P.reef?bobReef:bobTrot*(1-g)+bobGal*g)
+  // biped ape: heavy single-beat bound (no quad gallop available)
+  const bobApe=P.ape?Math.abs(Math.sin(st.phase*Math.PI*2))*P.bob*2.4*st.speedN*(1-st.air)*(1-st.knuckle*.4):0;
+  const bobY=(P.reef?bobReef:P.ape?bobApe:bobTrot*(1-g)+bobGal*g)
             +Math.sin(t*1.7)*.006*(1+st.rest*1.6)                    // breathing
             +st.air*Math.sin(st.flap)*.05;                           // wingbeat heave
   st.chest=[chestS[0],chestS[1]+bobY,chestS[2]];
@@ -857,15 +861,6 @@ function simulate(dt){
   const makeTo=(leg,home)=>clampFoot(add(home,scl(st.vel,overshoot)),leg,false);
   const tucked=st.air>.5||st.jumpY>.14||(P.reef&&(st.pulse>.7||st.act==='dash'));
   for(const leg of st.legs){
-    // ape SLAM / LEAP wind-up: freestyle the forearms off the gait (fists in the air)
-    if(P.ape&&leg.u<.5&&(st.armLift>.02||st.fistSlam>.02||st.jumpY>.08)){
-      const raised=add(spinePt(leg.u),add(scl(fw,-.12+st.fistSlam*.65+st.jumpY*.2),
-        add(scl(side,leg.s*(.32+.08*st.armLift)),
-          V(0,.12+.58*st.armLift-.42*st.fistSlam+st.jumpY*.35,0))));
-      leg.foot=mix(leg.foot,raised,Math.min(1,dt*14));
-      leg.stepping=false; leg.cool=0;
-      continue;
-    }
     if(tucked){ // feet fold under in flight / mid-jump / reef jet
       const limb=P.fore&&leg.u<.5?P.fore:P;
       const tuckAmt=P.reef?(st.act==='dash'?.55:.38):.42;
@@ -875,13 +870,9 @@ function simulate(dt){
       leg.stepping=false;
       continue;
     }
-    // ape arm-swing + knuckle plant: fore lead oscillates; stance widens on charge
+    // biped ape: wider plant during knuckle charge (only hind feet walk)
     let lead=leg.lead*(1-.7*st.rest), stance=leg.stance*stanceMul;
-    if(P.ape&&leg.u<.5){
-      const swing=Math.sin(st.phase*Math.PI*2+(leg.s>0?0:Math.PI))*st.speedN*.16*(1-st.knuckle*.4);
-      lead+=swing-.06*st.knuckle;
-      stance*=1.05+.2*st.knuckle;
-    }
+    if(P.ape){ lead*=1-st.knuckle*.25; stance*=1+.35*st.knuckle; }
     const home=add(add(spinePt(leg.u),scl(fw,lead)), scl(side,leg.s*stance));
     home[1]=restY;
     if(leg.stepping){
@@ -1258,7 +1249,7 @@ function buildSkeleton(dt){
 
   // rex arms — same solver, comically short
   featF=FB(P.arms);
-  if(P.arms)for(const s of[1,-1]){
+  if(P.arms&&!P.apeArms)for(const s of[1,-1]){
     const shA=add(add(st.chest,shoulderShift),add(scl(fw,P.chestR*rs*.55),
       add(scl(sideR,s*P.chestR*rs*.6),scl(upR,-P.chestR*rs*.1))));
     const tgt=add(shA,add(scl(fw,.16),V(0,-.18+Math.sin(t*3+s)*.012,0)));
@@ -1266,17 +1257,73 @@ function buildSkeleton(dt){
     S(shA,el,.05,.04,2,soft); S(el,hd,.04,.025,2,soft);
   }
 
+  // free ape arms — NOT gait legs (that shared Drake's silhouette). hang / swing /
+  // overhead wind-up / ground slam / knuckle-plant all drive one hand target.
+  featF=FB(P.apeArms);
+  if(P.apeArms){
+    const alu=(P.armLu||.48)*ls, all=(P.armLl||.44)*ls, ar=(P.armR||.09)*rs*(1+st.rage*.12);
+    for(const s of[1,-1]){
+      const sh=add(chestSh,add(scl(sideR,s*P.chestR*rs*1.05),
+        add(scl(upR,P.chestR*rs*.2),scl(fw,P.chestR*rs*.15))));
+      // idle hang + gait swing (opposite phase per side)
+      const swing=Math.sin(st.phase*Math.PI*2+(s>0?0:Math.PI))*st.speedN*.22*(1-st.knuckle);
+      let tgt=add(sh,add(scl(fw,.06+swing),add(scl(side,s*(.14+.05*st.speedN)),
+        V(0,-.62+st.rest*.12,0))));
+      // SLAM wind-up: both fists climb overhead
+      if(st.armLift>.01){
+        const upT=add(sh,add(scl(fw,-.08*st.armLift),add(scl(side,s*(.18+.12*st.armLift)),
+          V(0,.15+.55*st.armLift,0))));
+        tgt=mix(tgt,upT,st.armLift);
+      }
+      // SLAM strike / LEAP land: fists drive into the ground in front
+      if(st.fistSlam>.01){
+        const dn=add(chestSh,add(scl(fw,.2+.55*st.fistSlam),add(scl(side,s*.18),
+          V(0,0,0))));
+        dn[1]=.05+.08*(1-st.fistSlam);
+        tgt=mix(tgt,dn,st.fistSlam);
+      }
+      // CHARGE knuckle-walk: plant hands on the ground ahead of the feet
+      if(st.knuckle>.15&&st.armLift<.25&&st.fistSlam<.25){
+        const plant=add(chestSh,add(scl(fw,.42+.12*st.speedN),add(scl(side,s*.34),V(0,0,0))));
+        plant[1]=.05;
+        tgt=mix(tgt,plant,st.knuckle*.9);
+      }
+      // mid-leap: arms out for balance
+      if(st.jumpY>.1&&st.fistSlam<.2){
+        const fly=add(sh,add(scl(fw,.1),add(scl(side,s*(.35+.1*st.jumpY)),V(0,-.15,0))));
+        tgt=mix(tgt,fly,clamp(st.jumpY*1.2,0,.85));
+      }
+      const pole=add(scl(side,s*(.7+st.armLift*.4)),add(V(0,.25+st.armLift*.4,0),scl(fw,-.3+st.fistSlam*.8)));
+      const {knee:el,foot:hd}=solve2(sh,tgt,alu,all,pole);
+      S(sh,el,ar*1.75,ar*1.25,2,soft);
+      S(el,hd,ar*1.2,ar*.85,2,soft);
+      if(P.muscle){
+        S(add(sh,scl(upR,ar*.6)),mix(sh,el,.42),ar*2.4*(1+st.rage*.2),ar*1.3,1,soft);
+        S(el,el,ar*1.35,ar*1.35,2,soft);
+      }
+      if(P.fists){
+        const fR=ar*(1.85+.45*st.fistSlam+.25*st.rage);
+        S(hd,hd,fR,fR,2,soft);
+        for(let c=0;c<3;c++){
+          const off=scl(side,s*(c-1)*ar*.85);
+          const kn=add(hd,add(off,scl(fw,ar*.55)));
+          S(kn,add(kn,scl(fw,ar*.8)),ar*.32,.006,7,hard);
+        }
+      }
+    }
+  }
+
   // shoulder ruff — ape signature: thick cape of deltoid / mane mass
   featF=FB(P.shoulderRuff);
   if(P.shoulderRuff){
     for(const s of[1,-1]){
-      const sh=add(chestSh,add(scl(sideR,s*P.chestR*rs*.85),scl(upR,P.chestR*rs*.35)));
-      const tip=add(sh,add(scl(sideR,s*.16*rs),add(scl(upR,.14*rs*(1+st.rage*.2)),scl(fw,-.06*rs))));
-      S(sh,tip,P.chestR*rs*.55*(1+st.rage*.15),P.chestR*rs*.22,1,soft);
+      const sh=add(chestSh,add(scl(sideR,s*P.chestR*rs*.95),scl(upR,P.chestR*rs*.4)));
+      const tip=add(sh,add(scl(sideR,s*.18*rs),add(scl(upR,.16*rs*(1+st.rage*.25)),scl(fw,-.05*rs))));
+      S(sh,tip,P.chestR*rs*.58*(1+st.rage*.15),P.chestR*rs*.2,1,soft);
     }
     // nuchal hump between the shoulders
-    const nape=add(chestSh,add(scl(upR,P.chestR*rs*.7),scl(fw,-.04)));
-    S(nape,add(nape,scl(fw,-.12*rs)),P.chestR*rs*.42,P.chestR*rs*.2,1,soft);
+    const nape=add(chestSh,add(scl(upR,P.chestR*rs*.75),scl(fw,-.02)));
+    S(nape,add(nape,scl(fw,-.1*rs)),P.chestR*rs*.4,P.chestR*rs*.18,1,soft);
   }
 
   // Phase IV legs — one Universal Limb Class, different pole vectors
@@ -1291,34 +1338,22 @@ function buildSkeleton(dt){
       // the push/pull that fools a 2-bone solver into a 3-bone silhouette
       const hipJ=add(spine,add(scl(sideR,leg.s*bodyR*.55),scl(upR,-bodyR*.15)));
       const fs=limb.fs*ls;
-      const ankleT=add(leg.foot,add(V(0,fs*.85,0),scl(fw,-fs*.35)));
-      // ape forearms: elbow poles swing out on slam wind-up
-      let pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0));
-      if(P.ape&&leg.u<.5) pole=add(scl(fw,-1+st.fistSlam*1.4),add(V(0,.35+st.armLift*.5,0),scl(side,leg.s*st.armLift*.4)));
+      // ape biped: shorter metatarsal so the foot reads plantigrade, not digitigrade dragon
+      const fsUse=fs*(P.ape?.55:1);
+      const ankleT=add(leg.foot,add(V(0,fsUse*.85,0),scl(fw,-fsUse*.35)));
+      const pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
       const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
-      S(hipJ,knee,lr*1.5*(P.ape&&leg.u<.5?1.15:1),lr,2,soft);
+      S(hipJ,knee,lr*1.5,lr,2,soft);
       S(knee,ank,lr,lr*.8,2,soft);
       S(ank,add(leg.foot,scl(fw,.09)),lr*.8,lr*.6,2,soft);
       featF=FB(P.muscle);
       if(P.muscle){ // thigh / shoulder mass + knee knuckle
-        const mR=bodyR*(leg.u>.5?.85:.62)*(limb.massMul||1)*(1+(P.ape&&leg.u<.5?st.rage*.2:0));
+        const mR=bodyR*(leg.u>.5?.85:.62)*(limb.massMul||1)*(P.ape?1.15:1);
         S(add(hipJ,scl(upR,bodyR*.30)),mix(hipJ,knee,.45),mR,lr*1.15,1,soft);
         S(knee,knee,lr*1.22,lr*1.22,2,soft);
       }
-      // fists — ape signature: heavy bulb hands with knuckle studs (fore only)
-      featF=FB(P.fists);
-      if(P.fists&&leg.u<.5){
-        const tip=add(leg.foot,scl(fw,.05));
-        const fR=lr*(1.7+.35*st.fistSlam+.2*st.rage);
-        S(tip,tip,fR,fR,2,soft);
-        for(let c=0;c<3;c++){
-          const off=scl(side,leg.s*(c-1)*lr*.9);
-          const kn=add(tip,add(off,scl(fw,lr*.5)));
-          S(kn,add(kn,scl(fw,lr*.7)),lr*.35,.006,7,hard);
-        }
-      }
       featF=FB(Math.min(P.claws||0,1));
-      if(P.claws&&!(P.fists&&leg.u<.5)){ // talons fan from the toe (skip on fist hands)
+      if(P.claws){ // talons / toes fan from the foot (hands live on apeArms now)
         const tip=add(leg.foot,scl(fw,.09));
         for(let c=0;c<P.claws;c++){
           const off=scl(side,leg.s*(c-(P.claws-1)/2)*lr*1.1);

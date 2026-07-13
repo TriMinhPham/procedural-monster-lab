@@ -160,8 +160,8 @@ Built following "The Procedural Monster Manual" playbook:
   tail), the **wyvern** (bird group: biped plus wings), **rathalos** (MH flying wyvern:
   crimson plates, crown crests, flame-wing membranes, spiked tail club), and **veil**
   (reef-walker cnidarian: jellyfish bell, stalk eyes, radial maw, rib sails, belly
-  lanterns, corkscrew tail), and **fury** (storm ape: fist slam, knuckle charge, leap
-  landing — rajang energy, not a dragon; `visual-lab.html?preset=fury`).
+  lanterns, corkscrew tail), and **fury** (true-biped storm ape with *free* swinging
+  arms — not Drake's 2-pair fore-walkers: SLAM / CHARGE / LEAP; `?preset=fury`).
 - **Wings & flight** — wings fold flush along the body on the ground and flap open in the
   air, per the guide's bird-group note. Flight is a locomotion mode: far target → take off,
   climb to cruise height with a wingbeat heave, tuck the feet, and land near the call.
