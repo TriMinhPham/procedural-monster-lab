@@ -29,6 +29,9 @@
     letter-spacing:.1em;color:var(--ink-dim);pointer-events:none;user-select:none;
     text-shadow:0 1px 4px rgba(0,0,0,.65);}
   .hints span{color:var(--ink);}
+  #light{position:fixed;right:20px;top:18px;z-index:6;background:var(--glass);border:1px solid var(--glass-line);
+    border-radius:6px;color:var(--ink-dim);font:10px var(--mono);letter-spacing:.12em;padding:7px 10px;cursor:pointer;}
+  #light:hover{color:var(--ink);border-color:var(--amber-soft);}
 
   /* ---------- hunt HUD ---------- */
   #hud{position:fixed;inset:0;pointer-events:none;font-family:var(--mono);}
@@ -119,6 +122,7 @@
 <body>
 
 <canvas id="gl"></canvas>
+<button id="light">LIGHT MODE · OFF</button>
 <div class="fail" id="fail"><div>This specimen needs WebGL2.<br>Try a desktop browser with hardware acceleration on.</div></div>
 
 <div class="brand">
@@ -1518,21 +1522,21 @@ vec3 calcN(vec3 p){
 }
 float shadow(vec3 ro,vec3 rd){
   float res=1.,t=.03;
-  for(int i=0;i<34;i++){
+  for(int i=0;i<20;i++){
     float h=min(mapM(ro+rd*t),rockSDF(ro+rd*t));
     res=min(res,9.*h/(t*B_SHADOW)); /*BIOME*/
-    t+=clamp(h,.015,.25);
+    t+=clamp(h,.015,.45);
     if(res<.01||t>9.)break;
   }
   return clamp(res,0.,1.);
 }
 float calcAO(vec3 p,vec3 n){
   float occ=0.,sca=1.;
-  for(int i=0;i<5;i++){
-    float h=.012+.14*float(i)/4.;
-    occ+=(h-map(p+n*h))*sca; sca*=.8;
+  for(int i=0;i<4;i++){
+    float h=.012+.14*float(i)/3.;
+    occ+=(h-map(p+n*h))*sca; sca*=.75;
   }
-  return clamp(1.-2.2*occ,0.,1.);
+  return clamp(1.-2.35*occ,0.,1.);
 }
 vec3 sky(vec3 rd){
   float h=clamp(rd.y*.5+.5,0.,1.);
@@ -1566,7 +1570,7 @@ void main(){
   vec3 ro=uCamPos;
 
   float t=0.,h;
-  for(int i=0;i<150;i++){
+  for(int i=0;i<110;i++){
     h=map(ro+rd*t);
     if(h<.0009*t+.0004||t>42.)break;
     t+=h*.85;
@@ -1963,8 +1967,7 @@ addEventListener('keydown',e=>{
   else if(k==='q')startPotion();
   else if(k==='e')tryCarve();
   else if(k==='m'){muted=!muted;log(muted?'MUTED':'SOUND ON');}
-  else if(k==='p'){pixelMode=!pixelMode;canvas.style.imageRendering=pixelMode?'pixelated':'';
-    log(pixelMode?'PIXEL MODE ON':'PIXEL MODE OFF',true);resize();}
+  else if(k==='p'){setPixelMode(!pixelMode);log(pixelMode?'PIXEL MODE ON':'PIXEL MODE OFF',true);}
   else if(k==='t'){toonOn=1-toonOn;log(toonOn?'TOON MODE ON':'TOON MODE OFF',true);}
   else if(k==='r'&&(game.failed||game.over)){if(typeof location!=='undefined')location.reload();}
   else if(k==='b'&&(game.failed||game.over)){if(typeof location!=='undefined')location.href=location.pathname;} /*SAGA*/
@@ -2180,11 +2183,23 @@ function potionUpdate(dt){
 // The body plan IS the moveset: wings dive, long tails sweep wide, tailless
 // bruisers slam, bulk buys HP and costs speed, twitchy species get short tells.
 // mulberry32 + SEED defined earlier (biome pick); species stream below. /*BIOME*/
-// pixel mode: ?pixel=1 on load · P toggles at runtime (presentation only)
+// pixel mode: ?pixel=1 wins · saved LIGHT MODE follows (presentation only)
 let pixelMode=(()=>{
-  try{const m=/[?&]pixel=1(?:&|$)/.exec(location.search);if(m)return true;}catch(e){}
+  try{const m=/[?&]pixel=1(?:&|$)/.exec(location.search);if(m)return true;
+    return localStorage.getItem('hunt_light')==='1';}catch(e){}
   return false;
 })();
+const light=$('light');
+function setPixelMode(on,boot){
+  pixelMode=!!on;
+  if(canvas&&canvas.style)canvas.style.imageRendering=pixelMode?'pixelated':'';
+  if(light)light.textContent='LIGHT MODE · '+(pixelMode?'ON':'OFF');
+  resize();
+  if(!boot)try{localStorage.setItem('hunt_light',pixelMode?'1':'0');}catch(e){} // ?pixel=1 visits must not overwrite the pref
+}
+if(light&&light.addEventListener)light.addEventListener('click',()=>{
+  setPixelMode(!pixelMode);log(pixelMode?'PIXEL MODE ON':'PIXEL MODE OFF',true);
+});
 let toonOn=0, toonMix=0;
 try{if(new URLSearchParams(location.search).get('toon')==='1')toonOn=1;}catch(e){}
 let curRng=mulberry32(SEED); /*SAGA — swappable so the board can preview quest species*/
@@ -3040,7 +3055,7 @@ function hudTick(){
 
 // ---------- resize + adaptive quality ----------
 let quality=Math.min(devicePixelRatio||1,1.5),emaMs=14;
-const qBase=Math.min(devicePixelRatio||1,1.5),qHi=Math.min((devicePixelRatio||1)*1.5,2.25);
+const qBase=Math.min(devicePixelRatio||1,1.5);
 function resize(){
   // pixel mode: fixed 180px-tall backing store, nearest upscale via CSS
   if(pixelMode){
@@ -3056,6 +3071,7 @@ function resize(){
   }
 }
 addEventListener('resize',resize);
+setPixelMode(pixelMode,1);
 
 // ---------- main loop ----------
 const palBuf=new Float32Array(36), spineBuf=new Float32Array(16);
@@ -3153,16 +3169,21 @@ if(game.board){ /*SAGA — home screen over a live arena*/
 let last=performance.now();
 function frame(now){
   requestAnimationFrame(frame);
+  // EMA reads raw rAF cadence (every tick, pre-cap): it only stretches when the
+  // GPU is the wall, so the ladder recovers on 90/144Hz where present spacing
+  // sits above capMs by quantization. >250ms gaps are tab-switches, not load.
+  const tickD=now-(frame._p||now); frame._p=now;
+  if(tickD<250)emaMs=emaMs*.95+tickD*.05;
+  const capMs=game.board?1000/30:1000/60;
+  if(now-last<capMs-2)return;
   let dt=Math.max(Math.min((now-last)/1000,1/20),1e-4); last=now;
   toonMix+=(toonOn-toonMix)*Math.min(1,dt*7);
   if(Math.abs(toonOn-toonMix)<.002)toonMix=toonOn;
   if(game.hitStop>0){game.hitStop=Math.max(0,game.hitStop-dt);dt*=.12;} // impact freeze
-  emaMs=emaMs*.95+(now-(frame._p||now))*.05; frame._p=now; // EMA stays live in pixel mode
   // pixel mode holds a fixed low-res buffer — skip the adaptive quality ladder
   if(!pixelMode){
-    if(emaMs>22&&quality>.5){quality=Math.max(.5,quality*.92);resize();} // drop fast
-    else if(emaMs<11&&quality<qBase){quality=Math.min(quality*1.03,qBase);resize();}
-    else if(emaMs<8.5&&quality<qHi){quality=Math.min(quality*1.015,qHi);resize();} // SS headroom
+    if(emaMs>capMs*1.35&&quality>.5){quality=Math.max(.5,quality*.92);resize();} // drop fast
+    else if(emaMs<capMs*1.12&&quality<qBase){quality=Math.min(quality*1.03,qBase);resize();}
   }
   resize();
   game.time+=dt;
