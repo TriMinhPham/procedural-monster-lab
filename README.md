@@ -129,10 +129,10 @@ Open `index.html` in any browser with WebGL2 — no build step, no dependencies.
 - **A** attack · **space** jump · **D** dash · **R** rest (or use the panel buttons)
 - **Drag** to orbit, **scroll / pinch** to zoom
 - Panel: specimens (skink · beast · bug · rex · wyvern · **rathalos** · drake ·
-  diablos · **veil** · pocket starters in visual-lab),
+  diablos · veil · **fury** · pocket starters in visual-lab),
   dynamics tuning (f / ζ / r), morphs (leg length, plumpness,
   **leg pairs 1–4**, **posture** sprawl↔upright), dress-up (spikes, hat, **wings**)
-  — deep-link a specimen with `visual-lab.html?preset=veil`
+  — deep-link a specimen with `visual-lab.html?preset=fury`
 
 ### Pocket monsters (visual-lab)
 
@@ -160,7 +160,8 @@ Built following "The Procedural Monster Manual" playbook:
   tail), the **wyvern** (bird group: biped plus wings), **rathalos** (MH flying wyvern:
   crimson plates, crown crests, flame-wing membranes, spiked tail club), and **veil**
   (reef-walker cnidarian: jellyfish bell, stalk eyes, radial maw, rib sails, belly
-  lanterns, corkscrew tail — deliberately *not* a dragon; `visual-lab.html?preset=veil`).
+  lanterns, corkscrew tail), and **fury** (storm ape: fist slam, knuckle charge, leap
+  landing — rajang energy, not a dragon; `visual-lab.html?preset=fury`).
 - **Wings & flight** — wings fold flush along the body on the ground and flap open in the
   air, per the guide's bird-group note. Flight is a locomotion mode: far target → take off,
   climb to cruise height with a wingbeat heave, tuck the feet, and land near the call.

@@ -196,6 +196,39 @@ vm.runInContext(`
     if (P !== PRESETS.veil || st.pairsN !== 3) throw new Error('morph did not converge back to veil');
   }
 
+  if (PRESETS.fury) { // storm ape: SLAM / CHARGE / LEAP with real arm + rage envelopes
+    initCreature('fury'); st.roam = false; st.target = [5, 0, -2];
+    if (!P.ape) throw new Error('fury missing ape flag');
+    __drive(400); __check('fury-walk');
+    if (st.pairsN !== 2) throw new Error('fury should be biped-quad (2 pairs): ' + st.pairsN);
+    startAction('attack'); __drive(18);
+    if (st.armLift < 0.4) throw new Error('fury SLAM no arm lift: ' + st.armLift);
+    if (st.jawEnv < 0.4) throw new Error('fury SLAM no roar: ' + st.jawEnv);
+    __drive(20);
+    if (st.fistSlam < 0.3 && st.rage < 0.5) throw new Error('fury SLAM never hit: fist=' + st.fistSlam + ' rage=' + st.rage);
+    __check('fury-slam'); __drive(80);
+    startAction('dash'); __drive(15);
+    if (st.knuckle < 0.7) throw new Error('fury CHARGE no knuckle drop: ' + st.knuckle);
+    __check('fury-charge'); __drive(50);
+    startAction('jump'); __drive(20);
+    if (!(st.jumpY > 0.05 || st.jumpVy > 0.5)) throw new Error('fury LEAP no lift');
+    let landFist = 0, landCrouch = 0, wasAir = false;
+    for (let i = 0; i < 160; i++) {
+      __drive(1);
+      if (st.jumpY > 0.02) wasAir = true;
+      if (wasAir && st.jumpY <= 0) {
+        landFist = Math.max(landFist, st.fistSlam);
+        landCrouch = Math.max(landCrouch, st.crouch);
+      }
+    }
+    __check('fury-leap-landed');
+    if (landFist < 0.3 && landCrouch < 0.4) throw new Error('fury LEAP landing soft fist=' + landFist + ' crouch=' + landCrouch);
+    morphTo('beast'); __drive(120); __check('morph-fury-to-beast');
+    if (P !== PRESETS.beast) throw new Error('morph did not converge to beast');
+    morphTo('fury'); __drive(120); __check('morph-back-to-fury');
+    if (P !== PRESETS.fury || !P.ape) throw new Error('morph did not converge back to fury');
+  }
+
   if (PRESETS.sparky) { // pocket-monster trio: walk, jump, jaw, and a chibi morph
     for (const cute of ['sparky', 'blaze', 'sprout']) {
       initCreature(cute); st.roam = false; st.target = [3, 0, -2];

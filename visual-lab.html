@@ -95,6 +95,7 @@
     <button data-p="rathalos">RATHALOS</button>
     <button data-p="diablos">DIABLOS</button>
     <button data-p="veil">VEIL</button>
+    <button data-p="fury">FURY</button>
     <button data-p="sparky">SPARKY</button>
     <button data-p="blaze">BLAZE</button>
     <button data-p="sprout">SPROUT</button>
@@ -302,6 +303,20 @@ const PRESETS={
     ears:false, antennae:false, palps:false, spikesDefault:false, wings:false,
     dyn:[2.2,.28,1.7], impact:.35, sway:1.5, dashMul:.4, pal:'veil', k:.07
   },
+  fury:{ // storm ape — rajang energy: top-heavy, fist-led, knuckle charge (not a dragon)
+    pairs:2, mode:'zigzag', ape:true,
+    bodyLen:.82, chestH:1.02, hipH:.70, chestR:.34, midR:.28, hipR:.22,
+    neckLen:.16, neckUp:.04, headR:.22, headLen:.40, snout:.52,
+    jaw:true, teeth:true, teethN:5, brow:true, muscle:true, claws:2,
+    fists:true, shoulderRuff:true, // ape signature pieces
+    fore:{lu:.58, ll:.50, fs:.16, legR:.12, massMul:1.85}, // wrecking-ball arms
+    lu:.40, ll:.36, fs:.24, legR:.085,                   // springy hind legs
+    stance:[.40,.26], lead:[.18,-.14],
+    stepThresh:.34, stepDur:.13, stepH:.18, speed:2.7, stride:.78,
+    undulate:0, tailN:4, tailLen:.48, bob:.07, post:.9,
+    ears:true, earScale:1.15, antennae:false, palps:false, spikesDefault:false, wings:false,
+    dyn:[2.9,.38,-.55], impact:1.9, sway:1.25, dashMul:2.4, pal:'fury', k:.052
+  },
   // ---- pocket monsters: the chibi grammar is head ≈ half the body, eyes a
   // third of the head, stubby bent legs, bouncy dynamics, goopy smin, toon on
   sparky:{ // electric mouse: tall ink-dipped ears, cheek studs, spark-blue tail tip
@@ -353,6 +368,8 @@ const PALETTES={
   diablos:['#9a7146','#e8d4ae','#624832','#1e1a18','#c58b35','#a63d29'],
   // abyssal ink · ghost veil · kelp limb · deep bruise · pearl · phosphor
   veil:['#1a2438','#c8d4e8','#2d4a52','#0a1018','#e8dcc8','#3dffe0'],
+  // gold hide · cream belly · dark limbs · near-black · amber · rage-lightning
+  fury:['#d4a017','#f0e0b0','#3a2a18','#14100c','#f0c040','#ffe566'],
   sparky:['#f5c93f','#faf3d9','#e8a02e','#7a4a1e','#d94f30','#3a76c4'],
   blaze :['#f28f3f','#f9e7c0','#e2622f','#8a3b20','#57c4d8','#e8484f'],
   sprout:['#68c8a8','#eaf5dc','#3f9e7a','#1d4634','#e86a8a','#f2d16b'],
@@ -382,6 +399,8 @@ const st={
   gallop:0, gallopT:0, // 0..1 bound-gallop blend; sustained high-speed timer
   // reef (Veil): bell-jet locomotion + unique action envelopes
   pulse:0, pulsePh:0, bellOpen:1, lanternF:1, spin:0, hover:0, _jetLatched:false,
+  // ape (Fury): fist slam / knuckle charge / rage
+  armLift:0, fistSlam:0, rage:0, knuckle:0,
 };
 
 function initCreature(name){
@@ -408,6 +427,7 @@ function initCreature(name){
   st.yawRate=0; st.accF=0; st.pitch=0; st.roll=0; st.prevSpeedF=0;
   st.gallop=0; st.gallopT=0;
   st.pulse=0; st.pulsePh=0; st.bellOpen=1; st.lanternF=1; st.spin=0; st.hover=0; st._jetLatched=false;
+  st.armLift=0; st.fistSlam=0; st.rage=0; st.knuckle=0;
   st.posture=P.post;
   if(name==='rex')cam.dist=Math.max(cam.dist,8.5);
   if(name==='wyvern')cam.dist=Math.max(cam.dist,7.5);
@@ -415,6 +435,7 @@ function initCreature(name){
   if(name==='rathalos')cam.dist=Math.max(cam.dist,9);
   if(name==='diablos')cam.dist=Math.max(cam.dist,9.2);
   if(name==='veil')cam.dist=Math.max(cam.dist,8.5);
+  if(name==='fury')cam.dist=Math.max(cam.dist,9);
   if(CAMN[name])cam.dist=Math.min(cam.dist,CAMN[name]);
   if(P.toon)toonOn=1; // pocket monsters read best cel-shaded
   dyn.f=P.dyn[0]; dyn.z=P.dyn[1]; dyn.r=P.dyn[2];
@@ -426,7 +447,7 @@ function initCreature(name){
 // flags become 0..1 fades (blocks scale their radii through featF), leg pairs
 // and tail segments rebuild at integer crossings — same rule as the sliders.
 let morph=null;
-const CAMD={rex:8.5,wyvern:7.5,drake:8,rathalos:9,diablos:9.2,veil:8.5};
+const CAMD={rex:8.5,wyvern:7.5,drake:8,rathalos:9,diablos:9.2,veil:8.5,fury:9};
 const CAMN={sparky:4.4,blaze:4.6,sprout:4.6}; // pocket monsters pull the camera in
 const BLEND_DEF={wingScale:1,dashMul:1,soloU:.5,teethN:3,eye:1,earScale:1,impact:1,sway:1}; // fields read with a || default
 function blendPresets(A,B,e){
@@ -564,6 +585,47 @@ function simulate(dt){
         st.pulse=st.crouch; st.bellOpen=1-.6*st.crouch;
         if(q>=.2){st.act=null;if(st.jumpY<=0){st.jumpVy=4.8;st.lanternF=2;st.pulse=1;}}
       }
+    }else if(P.ape){
+      // Fury: SLAM / CHARGE / LEAP — fist-led ape envelopes
+      if(st.act==='attack'){
+        // wind-up (both fists rise, roar) → double-fist ground slam → recover
+        if(q<.24){
+          st.armLift=clamp(q/.24,0,1); st.fistSlam=0;
+          st.jawEnv=st.armLift; st.crouch=st.armLift*.5;
+          st.imp=add(st.imp,scl(st.fw,-5.2*dt));
+          st.rage=Math.max(st.rage,st.armLift*.9);
+        }else if(q<.52){
+          const u=clamp((q-.24)/.2,0,1);
+          st.armLift=1-u; st.fistSlam=Math.sin(Math.PI*Math.min(u*1.15,1));
+          st.jawEnv=1-u*.25; st.crouch=.5+.5*u;
+          if(!st._struck){
+            st._struck=true;
+            st.imp=add(st.imp,add(scl(st.fw,11),V(0,-2.5,0)));
+            st.sodChest.yd[1]-=1.6; st.rage=1;
+          }
+        }else{
+          st.armLift*=Math.exp(-9*dt); st.fistSlam*=Math.exp(-7*dt);
+          st.jawEnv*=Math.exp(-5*dt);
+          if(q>1.05){st.act=null;st._struck=false;}
+        }
+      }else if(st.act==='dash'){
+        // CHARGE: drop to knuckles, rocket forward, weaving shoulder
+        st.knuckle=1; st.rage=Math.max(st.rage,.75);
+        st.jawEnv=Math.max(st.jawEnv,.45+Math.sin(q*14)*.15);
+        st.imp=add(st.imp,scl(st.fw,(14+8*Math.sin(q*10))*dt));
+        st.sodChest.yd[1]-=.8*dt;
+        if(q>.62)st.act=null;
+      }else if(st.act==='jump'){
+        // LEAP: deep crouch + arm coil → explosive biped launch
+        st.crouch=Math.min(q/.17,1); st.armLift=st.crouch; st.knuckle=1-st.crouch*.5;
+        if(q>=.17){
+          st.act=null;
+          if(st.jumpY<=0){
+            st.jumpVy=5.4; st.imp=add(st.imp,scl(st.fw,4.2));
+            st.armLift=0; st.rage=Math.max(st.rage,.85);
+          }
+        }
+      }
     }else if(st.act==='attack'){
       st.jawEnv=Math.sin(Math.PI*clamp(q/.55,0,1));
       if(q<.16)st.imp=add(st.imp,scl(st.fw,-2.6*dt));            // wind-up recoil
@@ -577,12 +639,28 @@ function simulate(dt){
     }
   }else st.jawEnv*=Math.exp(-9*dt);
   st.crouch*=Math.exp(-6*dt);
-  st.imp=scl(st.imp,Math.exp(P.reef?-3.8*dt:-5.5*dt)); // reef jets coast longer
+  st.imp=scl(st.imp,Math.exp(P.reef?-3.8*dt:P.ape?-4.2*dt:-5.5*dt));
   if(st.jumpVy!==0||st.jumpY>0){                                 // ballistic arc
-    st.jumpVy-=(P.reef?6.2:9.5)*dt; st.jumpY+=st.jumpVy*dt; // Veil hangs in the water-column
-    if(st.jumpY<=0){st.jumpY=0;st.jumpVy=0;st.crouch=Math.max(st.crouch,P.reef?.45:.8);}
+    st.jumpVy-=(P.reef?6.2:P.ape?8.2:9.5)*dt; st.jumpY+=st.jumpVy*dt;
+    if(st.jumpY<=0){
+      st.jumpY=0;st.jumpVy=0;
+      st.crouch=Math.max(st.crouch,P.reef?.45:P.ape?.95:.8);
+      // ape LEAP landing: fists plant, shock through the chest
+      if(P.ape){st.fistSlam=Math.max(st.fistSlam,.85);st.sodChest.yd[1]-=.9;st.knuckle=1;}
+    }
   }
-  st.rest+=((st.restOn?1:0)-st.rest)*Math.min(1,dt*(P.reef?1.4:2.2)); // settle slowly
+  st.rest+=((st.restOn?1:0)-st.rest)*Math.min(1,dt*(P.reef?1.4:2.2));
+
+  // ape rage / knuckle blend (outside action envelopes)
+  if(P.ape){
+    if(!st.act){st.armLift*=Math.exp(-6*dt);st.fistSlam*=Math.exp(-5*dt);}
+    st.rage*=Math.exp(-.45*dt);
+    const knWant=(st.act==='dash'||st.speedN>.62)?1:(st.speedN>.3?.45:st.rest*.2);
+    st.knuckle+=(knWant-st.knuckle)*Math.min(1,dt*3.5);
+  }else{
+    st.armLift*=Math.exp(-8*dt); st.fistSlam*=Math.exp(-8*dt);
+    st.rage*=Math.exp(-8*dt); st.knuckle*=Math.exp(-8*dt);
+  }
 
   // --- steering toward target ---
   const toT=sub(st.target,st.leader); toT[1]=0;
@@ -625,20 +703,23 @@ function simulate(dt){
   }
   // winged creatures take off for far calls, land near them
   st.air+=(((st.wings&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
-  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?(P.reef?1.8:3.2):1)*(1-st.rest*.95);
+  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?(P.reef?1.8:P.ape?2.6:3.2):1)*(1-st.rest*.95)
+    *(P.ape?1+st.rage*.25:1);
   // a call behind the back doesn't moonwalk: creep while the spine comes
   // around (turn steering below), open the throttle once aligned
   const align=dist>.45?clamp(dot(nrm(toT),st.fw)*.5+.62,.18,1):1;
   // reef: cruise is soft; jet impulses carry most of the speed
-  const desireK=P.reef?.55:1.8;
+  // ape: aggressive close-in — wants the target hard
+  const desireK=P.reef?.55:P.ape?2.4:1.8;
   const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*desireK)*align):V();
-  const k=1-Math.exp(-(P.reef?2.2:4)*dt);
+  const k=1-Math.exp(-(P.reef?2.2:P.ape?5.5:4)*dt);
   st.vel=mix(st.vel,desired,k);
   st.leader=add(st.leader,scl(add(st.vel,st.imp),dt));
   // height: posture & leg morphs, rest, jump, flight altitude
   const postHF=P.mode==='zigzag'?1:(0.85+0.5*st.posture)/(0.85+0.5*P.post);
   const legHF=P.mode==='zigzag'?(1+(st.legScale-1)*.8):1;
-  st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest);
+  // knuckle drop: ape lowers the chest onto its fists when charging / sprinting
+  st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest)*(P.ape?1-st.knuckle*.22:1);
   const groundY=P.chestH*st.hMul;
   st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY+(P.reef?st.hover:0);
   const speed=len(st.vel);
@@ -649,11 +730,13 @@ function simulate(dt){
 
   // --- gallop: hysteresis blend (quad zigzag only; damp on hard yaw) ---
   // φ=0 gather on sin>0 (hind plant/power); ψ=π loft during extension
+  // ape charges enter bound-gallop earlier and harder
   const canGallop=P.mode==='zigzag'&&st.pairsN===2&&st.air<.1&&!st.restOn;
-  if(canGallop&&st.speedN>.72) st.gallopT=Math.min(.4,st.gallopT+dt);
-  else if(!canGallop||st.speedN<.55) st.gallopT=0;
+  const gEnter=P.ape?.48:.72, gExit=P.ape?.32:.55;
+  if(canGallop&&(st.speedN>gEnter||(P.ape&&st.act==='dash'))) st.gallopT=Math.min(.4,st.gallopT+dt*(P.ape?1.6:1));
+  else if(!canGallop||st.speedN<gExit) st.gallopT=0;
   else st.gallopT=Math.max(0,st.gallopT-dt*1.5);
-  let gTgt=(canGallop&&st.gallopT>=.25)?1:0;
+  let gTgt=(canGallop&&st.gallopT>=(P.ape?.12:.25))?1:0;
   const yawAbs=Math.abs(st.yawRate); // prev-frame rate: release through hard turns
   if(yawAbs>1.2) gTgt*=clamp(1-(yawAbs-1.2)/2.2,0,1);
   st.gallop+=(gTgt-st.gallop)*Math.min(1,dt*4);
@@ -774,6 +857,15 @@ function simulate(dt){
   const makeTo=(leg,home)=>clampFoot(add(home,scl(st.vel,overshoot)),leg,false);
   const tucked=st.air>.5||st.jumpY>.14||(P.reef&&(st.pulse>.7||st.act==='dash'));
   for(const leg of st.legs){
+    // ape SLAM / LEAP wind-up: freestyle the forearms off the gait (fists in the air)
+    if(P.ape&&leg.u<.5&&(st.armLift>.02||st.fistSlam>.02||st.jumpY>.08)){
+      const raised=add(spinePt(leg.u),add(scl(fw,-.12+st.fistSlam*.65+st.jumpY*.2),
+        add(scl(side,leg.s*(.32+.08*st.armLift)),
+          V(0,.12+.58*st.armLift-.42*st.fistSlam+st.jumpY*.35,0))));
+      leg.foot=mix(leg.foot,raised,Math.min(1,dt*14));
+      leg.stepping=false; leg.cool=0;
+      continue;
+    }
     if(tucked){ // feet fold under in flight / mid-jump / reef jet
       const limb=P.fore&&leg.u<.5?P.fore:P;
       const tuckAmt=P.reef?(st.act==='dash'?.55:.38):.42;
@@ -783,8 +875,14 @@ function simulate(dt){
       leg.stepping=false;
       continue;
     }
-    const home=add(add(spinePt(leg.u),scl(fw,leg.lead*(1-.7*st.rest))),
-                   scl(side,leg.s*leg.stance*stanceMul));
+    // ape arm-swing + knuckle plant: fore lead oscillates; stance widens on charge
+    let lead=leg.lead*(1-.7*st.rest), stance=leg.stance*stanceMul;
+    if(P.ape&&leg.u<.5){
+      const swing=Math.sin(st.phase*Math.PI*2+(leg.s>0?0:Math.PI))*st.speedN*.16*(1-st.knuckle*.4);
+      lead+=swing-.06*st.knuckle;
+      stance*=1.05+.2*st.knuckle;
+    }
+    const home=add(add(spinePt(leg.u),scl(fw,lead)), scl(side,leg.s*stance));
     home[1]=restY;
     if(leg.stepping){
       leg.t+=dt/stepDurE;
@@ -1168,6 +1266,19 @@ function buildSkeleton(dt){
     S(shA,el,.05,.04,2,soft); S(el,hd,.04,.025,2,soft);
   }
 
+  // shoulder ruff — ape signature: thick cape of deltoid / mane mass
+  featF=FB(P.shoulderRuff);
+  if(P.shoulderRuff){
+    for(const s of[1,-1]){
+      const sh=add(chestSh,add(scl(sideR,s*P.chestR*rs*.85),scl(upR,P.chestR*rs*.35)));
+      const tip=add(sh,add(scl(sideR,s*.16*rs),add(scl(upR,.14*rs*(1+st.rage*.2)),scl(fw,-.06*rs))));
+      S(sh,tip,P.chestR*rs*.55*(1+st.rage*.15),P.chestR*rs*.22,1,soft);
+    }
+    // nuchal hump between the shoulders
+    const nape=add(chestSh,add(scl(upR,P.chestR*rs*.7),scl(fw,-.04)));
+    S(nape,add(nape,scl(fw,-.12*rs)),P.chestR*rs*.42,P.chestR*rs*.2,1,soft);
+  }
+
   // Phase IV legs — one Universal Limb Class, different pole vectors
   for(const leg of st.legs){
     featF=1;
@@ -1181,19 +1292,33 @@ function buildSkeleton(dt){
       const hipJ=add(spine,add(scl(sideR,leg.s*bodyR*.55),scl(upR,-bodyR*.15)));
       const fs=limb.fs*ls;
       const ankleT=add(leg.foot,add(V(0,fs*.85,0),scl(fw,-fs*.35)));
-      const pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
+      // ape forearms: elbow poles swing out on slam wind-up
+      let pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0));
+      if(P.ape&&leg.u<.5) pole=add(scl(fw,-1+st.fistSlam*1.4),add(V(0,.35+st.armLift*.5,0),scl(side,leg.s*st.armLift*.4)));
       const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
-      S(hipJ,knee,lr*1.5,lr,2,soft);
+      S(hipJ,knee,lr*1.5*(P.ape&&leg.u<.5?1.15:1),lr,2,soft);
       S(knee,ank,lr,lr*.8,2,soft);
       S(ank,add(leg.foot,scl(fw,.09)),lr*.8,lr*.6,2,soft);
       featF=FB(P.muscle);
       if(P.muscle){ // thigh / shoulder mass + knee knuckle
-        const mR=bodyR*(leg.u>.5?.85:.62)*(limb.massMul||1);
+        const mR=bodyR*(leg.u>.5?.85:.62)*(limb.massMul||1)*(1+(P.ape&&leg.u<.5?st.rage*.2:0));
         S(add(hipJ,scl(upR,bodyR*.30)),mix(hipJ,knee,.45),mR,lr*1.15,1,soft);
         S(knee,knee,lr*1.22,lr*1.22,2,soft);
       }
+      // fists — ape signature: heavy bulb hands with knuckle studs (fore only)
+      featF=FB(P.fists);
+      if(P.fists&&leg.u<.5){
+        const tip=add(leg.foot,scl(fw,.05));
+        const fR=lr*(1.7+.35*st.fistSlam+.2*st.rage);
+        S(tip,tip,fR,fR,2,soft);
+        for(let c=0;c<3;c++){
+          const off=scl(side,leg.s*(c-1)*lr*.9);
+          const kn=add(tip,add(off,scl(fw,lr*.5)));
+          S(kn,add(kn,scl(fw,lr*.7)),lr*.35,.006,7,hard);
+        }
+      }
       featF=FB(Math.min(P.claws||0,1));
-      if(P.claws){ // talons fan from the toe
+      if(P.claws&&!(P.fists&&leg.u<.5)){ // talons fan from the toe (skip on fist hands)
         const tip=add(leg.foot,scl(fw,.09));
         for(let c=0;c<P.claws;c++){
           const off=scl(side,leg.s*(c-(P.claws-1)/2)*lr*1.1);
@@ -1851,14 +1976,18 @@ function startAction(n){
     st.restOn=!st.restOn;
     if(st.restOn)st.target=[st.leader[0],0,st.leader[2]];
     if(P.reef&&st.restOn){st.bellOpen=1.35;st.lanternF=.55;st.pulse=.2;}
+    if(P.ape&&st.restOn){st.knuckle=.3;st.armLift=0;st.fistSlam=0;}
     $('btnRest').classList.toggle('on',st.restOn);
     return;
   }
   if(st.restOn){st.restOn=false;$('btnRest').classList.remove('on');}
   if(n==='jump'&&(st.jumpY>0||st.air>.5))return;
   // reef dash is a spiral jet stream driven by the action loop, not one impulse
+  // ape CHARGE: initial burst + knuckle drop; loop adds the rocket thrust
   if(n==='dash'&&!P.reef)st.imp=add(st.imp,scl(st.fw,6.5*(P.dashMul||1)));
   if(n==='dash'&&P.reef){st.spin=.5;st.pulse=1;st.bellOpen=.55;}
+  if(n==='dash'&&P.ape){st.knuckle=1;st.rage=Math.max(st.rage,.6);}
+  if(n==='attack'&&P.ape){st.armLift=.15;st.rage=Math.max(st.rage,.4);}
   st.act=n;st.actT=0;st._struck=false;
 }
 $('actions').addEventListener('click',e=>{
@@ -1898,16 +2027,17 @@ function syncUI(){
   $('ckSpikes').checked=st.spikes;$('ckHat').checked=st.hat;$('ckRoam').checked=st.roam;
   $('ckWings').checked=st.wings;
   $('btnRest').classList.toggle('on',st.restOn);
-  // Veil renames the verb set so the controls match the animal
-  const reef=!!(P&&P.reef);
+  // specimen-specific verb set so the controls match the animal
+  const reef=!!(P&&P.reef), ape=!!(P&&P.ape);
   const lab=reef
     ?{attack:'REEL',jump:'JET',dash:'SPIRAL',rest:'SETTLE'}
+    :ape?{attack:'SLAM',jump:'LEAP',dash:'CHARGE',rest:'REST'}
     :{attack:'ATTACK',jump:'JUMP',dash:'DASH',rest:'REST'};
   document.querySelectorAll('#actions button').forEach(b=>{
     if(b.dataset.a&&lab[b.dataset.a])b.textContent=lab[b.dataset.a];
   });
-  const actSect=[...document.querySelectorAll('.sect')].find(el=>/ACTIONS/.test(el.textContent));
-  if(actSect)actSect.textContent=reef?'REEF · A ␣ D R':'ACTIONS · A ␣ D R';
+  const actSect=[...document.querySelectorAll('.sect')].find(el=>/ACTIONS|REEF|APE/.test(el.textContent));
+  if(actSect)actSect.textContent=reef?'REEF · A ␣ D R':ape?'APE · A ␣ D R':'ACTIONS · A ␣ D R';
   document.querySelectorAll('#rendermode button').forEach(b=>
     b.classList.toggle('on',+b.dataset.r===toonOn));
   $('sf').value=dyn.f;$('sz').value=dyn.z;$('sr').value=dyn.r;
@@ -1932,7 +2062,7 @@ addEventListener('resize',resize);
 // ---------- main loop ----------
 // ?preset=rex&dist=5.5&el=.3&az=1.2&roam=0&toon=1 — reproducible hero shots
 const qp=new URLSearchParams(location.search);
-initCreature(PRESETS[qp.get('preset')]?qp.get('preset'):'veil');
+initCreature(PRESETS[qp.get('preset')]?qp.get('preset'):'fury');
 if(qp.get('dist'))cam.dist=+qp.get('dist');
 if(qp.get('el'))cam.el=+qp.get('el');
 if(qp.get('az'))cam.az=+qp.get('az');
@@ -1982,8 +2112,9 @@ function frame(now){
   gl.uniform1f(U.uBound,bRad);
   const moving=len(st.vel)>.25;
   gl.uniform1f(U.uMark,Math.max(clamp(1-(st.time-st.clickT)/1.6,0,1),moving?.35:0));
-  gl.uniform1f(U.uStripe,+P.stripes||0); // fractional mid-morph: markings fade
-  gl.uniform1f(U.uFlame,+P.flameWings||0);
+  // rage paints dark dorsal bands on the gold ape hide (reuses stripe shader)
+  gl.uniform1f(U.uStripe,Math.max(+P.stripes||0,P.ape?st.rage*.95:0));
+  gl.uniform1f(U.uFlame,Math.max(+P.flameWings||0,P.ape?st.rage*.55:0));
   gl.uniform3f(U.uCamPos,...cam.pos);
   gl.uniform3f(U.uCenter,...bCenter);
   gl.uniform3f(U.uSun,...SUN);
