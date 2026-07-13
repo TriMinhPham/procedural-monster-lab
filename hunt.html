@@ -239,15 +239,15 @@ const PRESETS={
     muscle:true, brow:true, claws:3, plates:true,
     dyn:[1.5,.8,.7], pal:'fossil', k:.06
   },
-  hunter:{ // armored humanoid: compact torso, long legs, sword arm
-    pairs:1, mode:'zigzag', soloU:.5, humanoid:true,
-    bodyLen:.24, chestH:1.00, hipH:.80, chestR:.17, midR:.135, hipR:.19,
-    neckLen:.20, neckUp:.12, headR:.125, headLen:.22, snout:.1,
-    lu:.43, ll:.37, fs:.17, legR:.052, stance:[.19], lead:[.07],
-    stepThresh:.27, stepDur:.14, stepH:.12, speed:2.15, stride:.58,
-    undulate:0, tailN:0, tailLen:0, bob:.022, post:.98,
+  hunter:{ // armored humanoid: upright plantigrade knight (hips under torso, not mid-body)
+    pairs:1, mode:'zigzag', soloU:.94, humanoid:true,
+    bodyLen:.20, chestH:1.08, hipH:.96, chestR:.17, midR:.112, hipR:.155,
+    neckLen:.12, neckUp:.06, headR:.130, headLen:.14, snout:.05,
+    lu:.44, ll:.42, fs:.11, legR:.048, stance:[.13], lead:[.03],
+    stepThresh:.22, stepDur:.15, stepH:.10, speed:2.15, stride:.52,
+    undulate:0, tailN:0, tailLen:0, bob:.016, post:.98,
     ears:false, antennae:false, palps:false, spikesDefault:false,
-    dyn:[2.4,.7,.9], pal:'ember', k:.045
+    dyn:[2.4,.7,.9], pal:'ember', k:.04
   },
   wyvern:{ // bird group: biped + wings, flies to far calls
     pairs:1, mode:'zigzag', soloU:.75,
@@ -871,14 +871,16 @@ function buildSkeleton(cr,dt){
   const hs=nrm(add(scl(hs0,hc),scl(hu0,hr))), hu=nrm(add(scl(hu0,hc),scl(hs0,-hr)));
   st.headPos=head; st.jawTip=add(head,scl(hf,P.headLen*.55)); // combat probe points
   if(P.humanoid){
-    S(neckBase,head,P.chestR*rs*.62,P.headR*rs*.95,2,soft);
-    // Keep the face blank: a dome and a single dark visor make the read immediate.
-    const dome=add(head,scl(hu,P.headR*rs*.12));
-    S(sub(dome,scl(hf,P.headLen*.22)),add(dome,scl(hf,P.headLen*.22)),
-      P.headR*rs*1.08,P.headR*rs*.88,5,hard,'helmet');
-    const visor=add(head,add(scl(hf,P.headLen*.34),scl(hu,P.headR*rs*.10)));
-    S(add(visor,scl(hs,-P.headR*rs*.52)),add(visor,scl(hs,P.headR*rs*.52)),
-      P.headR*rs*.12,P.headR*rs*.10,3,hard,'visor');
+    // short thick neck + vertical helm (dome + face plate + dark slit) — a head, not a pill
+    S(neckBase,head,P.chestR*rs*.40,P.headR*rs*.82,2,soft);
+    const dome=add(head,scl(hu,P.headR*rs*.06));
+    S(dome,add(dome,scl(hu,P.headR*rs*.62)),P.headR*rs*1.02,P.headR*rs*.90,5,hard,'helmet');
+    const face=add(head,add(scl(hf,P.headLen*.30),scl(hu,-P.headR*rs*.08)));
+    S(add(face,scl(hs,-P.headR*rs*.50)),add(face,scl(hs,P.headR*rs*.50)),
+      P.headR*rs*.40,P.headR*rs*.34,5,hard,'helmet');
+    const visor=add(head,add(scl(hf,P.headLen*.48),scl(hu,P.headR*rs*.12)));
+    S(add(visor,scl(hs,-P.headR*rs*.34)),add(visor,scl(hs,P.headR*rs*.34)),
+      P.headR*rs*.07,P.headR*rs*.055,3,hard,'visor');
   }else{
     // neck seam pinch — thinner waist articulates head↔torso without a robotic break
     {const nR0=P.chestR*rs*.48,nR1=P.headR*rs*.68,nMid=mix(neckBase,head,.55);
@@ -1069,11 +1071,22 @@ function buildSkeleton(cr,dt){
   // human arms: the right target and blade orientation are action-driven.
   if(P.humanoid){
     const wt=clamp(WTIER|0,0,4), at=clamp(ATIER|0,0,3); /*FORGE*/
-    const armScale=st.scale, upper=.27*armScale, fore=.24*armScale;
+    const armScale=st.scale, upper=.29*armScale, fore=.26*armScale;
     let rightHand=null;
+    // shoulder shelf — wider than the chest tube so the silhouette is human, not a sausage
     for(const s of[1,-1]){
-      const shA=add(st.chest,add(scl(fw,P.chestR*rs*.55),
-        add(scl(bs,s*P.chestR*rs*.78),scl(bu,-P.chestR*rs*.05))));
+      const clav=add(st.chest,add(scl(bs,s*P.chestR*rs*.55),scl(bu,P.chestR*rs*.22)));
+      const shCap=add(st.chest,add(scl(bs,s*P.chestR*rs*1.12),scl(bu,P.chestR*rs*.12)));
+      S(clav,shCap,P.chestR*rs*.38,P.chestR*rs*.48,2,soft,'shoulder');
+    }
+    // breastplate: flat front plate over the gambeson tube
+    {const bp0=add(st.chest,add(scl(fw,P.chestR*rs*.72),scl(bu,P.chestR*rs*.08)));
+     const bp1=add(mix(st.chest,st.hip,.42),add(scl(fw,P.midR*rs*.55),scl(bu,-P.midR*rs*.05)));
+     S(bp0,bp1,P.chestR*rs*.78,P.midR*rs*.70,5,hard,'breastplate');}
+    for(const s of[1,-1]){
+      // glenoid sits out on the shoulder shelf, slightly below collarbone
+      const shA=add(st.chest,add(scl(fw,P.chestR*rs*.22),
+        add(scl(bs,s*P.chestR*rs*1.08),scl(bu,P.chestR*rs*.08))));
       let tgt;
       if(s>0&&st.act==='strike'){
         const heavy=st.actProf.kind==='heavy', q=st.actT;
@@ -1082,22 +1095,24 @@ function buildSkeleton(cr,dt){
       }else if(s>0&&st.act==='dash'){
         tgt=add(shA,add(scl(fw,-.18),add(scl(side,.15),scl(bu,-.12))));
       }else if(s>0){
-        tgt=add(shA,add(scl(fw,.04),add(scl(side,.22),scl(bu,-.16))));
+        // ready guard: elbow back, hand low by the hip — human fighter, not T-pose
+        tgt=add(shA,add(scl(fw,.06),add(scl(side,.18),scl(bu,-.22))));
       }else{
-        tgt=add(shA,add(scl(fw,.18),add(scl(side,-.16),scl(bu,.10))));
+        // off-hand forward for balance
+        tgt=add(shA,add(scl(fw,.14),add(scl(side,-.12),scl(bu,-.08))));
       }
-      const pole=add(scl(fw,s>0?-1:1),add(scl(side,s*.35),scl(bu,-.25)));
+      const pole=add(scl(fw,s>0?-1:.4),add(scl(side,s*.25),scl(bu,-.15)));
       const {knee:el,foot:hd}=solve2(shA,tgt,upper,fore,add(st.chest,pole));
       const tag=s>0?'armR':'armL';
-      S(shA,el,.055,.043,2,soft,tag); S(el,hd,.043,.030,2,soft,tag);
-      S(hd,hd,.058,.058,2,soft,tag);
+      S(shA,el,.054,.042,2,soft,tag); S(el,hd,.042,.030,2,soft,tag);
+      S(hd,hd,.050,.050,5,hard,'gauntlet');
       if(s>0)rightHand=hd;
-      const pad=add(shA,add(scl(bs,s*P.chestR*rs*.10),scl(bu,.02))); /*FORGE*/
+      const pad=add(shA,add(scl(bs,s*P.chestR*rs*.08),scl(bu,.04))); /*FORGE*/
       const padScale=at>=1?1.10:1; /*FORGE*/
-      S(pad,add(pad,scl(bu,.045*padScale)),P.chestR*rs*.52*padScale,P.chestR*rs*.46*padScale,5,hard,'pauldron'); /*FORGE*/
+      S(pad,add(pad,scl(bu,.045*padScale)),P.chestR*rs*.48*padScale,P.chestR*rs*.42*padScale,5,hard,'pauldron'); /*FORGE*/
     }
     if(at>=2){ /*FORGE*/
-      const crest=add(head,add(scl(hu,P.headR*rs*.88),scl(hf,-.02))); /*FORGE*/
+      const crest=add(head,add(scl(hu,P.headR*rs*.95),scl(hf,-.02))); /*FORGE*/
       S(crest,add(crest,add(scl(hu,.16),scl(hf,-.04))),P.headR*rs*.18,.006,3,hard,'armor'); /*FORGE*/
     } /*FORGE*/
     if(at>=3){ /*FORGE*/
@@ -1136,10 +1151,12 @@ function buildSkeleton(cr,dt){
       S(pom,pom,.052,.052,6,hard,'sword'); /*FORGE*/
     } /*FORGE*/
     st.jawTip=st.bladeB;
-    const pel=add(st.hip,scl(bu,-.035));
-    S(add(pel,scl(fw,-.10)),add(pel,scl(fw,.10)),P.hipR*rs*1.02,P.hipR*rs*.84,2,soft,'pelvis');
-    const tas=add(st.hip,scl(bu,-P.hipR*rs*.75));
-    S(add(tas,scl(fw,-.08)),add(tas,scl(fw,.07)),P.hipR*rs*.76,P.hipR*rs*.46,5,hard,'tasset');
+    // pelvis block under a short torso — hip width is the human tell
+    const pel=add(st.hip,scl(bu,-.02));
+    S(add(pel,scl(fw,-.08)),add(pel,scl(fw,.10)),P.hipR*rs*1.15,P.hipR*rs*.95,2,soft,'pelvis');
+    S(add(pel,scl(bs,-P.hipR*rs*.75)),add(pel,scl(bs,P.hipR*rs*.75)),P.hipR*rs*.48,P.hipR*rs*.48,2,soft,'pelvis');
+    const tas=add(st.hip,scl(bu,-P.hipR*rs*.65));
+    S(add(tas,scl(fw,-.07)),add(tas,scl(fw,.08)),P.hipR*rs*.70,P.hipR*rs*.42,5,hard,'tasset');
   }else if(P.arms)for(const s of[1,-1]){
     const shA=add(st.chest,add(scl(fw,P.chestR*rs*.55),
       add(scl(bs,s*P.chestR*rs*.6),scl(bu,-P.chestR*rs*.1))));
@@ -1157,10 +1174,28 @@ function buildSkeleton(cr,dt){
     const lu=P.lu*ls, ll=P.ll*ls, lr=P.legR*rs;
     let kneeJ=null;
     if(P.mode==='zigzag'){
+      const fs=P.fs*ls;
+      if(P.humanoid){
+        // plantigrade knight: hip→knee→ankle, sole flat on the ground (no digitigrade metatarsal)
+        const hipJ=add(spine,add(scl(bs,leg.s*bodyR*.38),scl(bu,-bodyR*.05)));
+        const ankleT=add(leg.foot,add(V(0,fs*.55,0),scl(fw,fs*.12)));
+        let pole=add(scl(fw,1.15),V(0,.40,0)); // knees face forward
+        if(broken){pole=nrm(add(pole,scl(bs,leg.s*1.5)));ankleT[1]=Math.max(ankleT[1]-fs*.3,fs*.2);}
+        const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
+        // thigh bulk + kneecap + shin (human mass, not stick-insect tubes)
+        S(hipJ,knee,lr*1.65,lr*1.15,2,soft,lgTag);
+        S(add(hipJ,scl(bu,bodyR*.18)),mix(hipJ,knee,.42),bodyR*.52,lr*1.2,2,soft,lgTag);
+        S(knee,knee,lr*1.18,lr*1.18,2,soft,lgTag);
+        S(knee,ank,lr*(broken?.78:.95),lr*.72*(broken?.7:1),2,soft,lgTag);
+        // boot sole heel→toe (plantigrade flat foot, not a talon tip)
+        const toe=add(leg.foot,scl(fw,fs*.95));
+        const heel=add(leg.foot,scl(fw,-fs*.40));
+        S(heel,toe,lr*1.05,lr*.78,5,hard,'boot');
+        kneeJ=knee;
+      }else{
       // the Mammal Problem: solve hip→ankle two-bone, hang the metatarsal below —
       // the push/pull that fools a 2-bone solver into a 3-bone silhouette
       const hipJ=add(spine,add(scl(bs,leg.s*bodyR*.55),scl(bu,-bodyR*.15)));
-      const fs=P.fs*ls;
       const ankleT=add(leg.foot,add(V(0,fs*.85,0),scl(fw,-fs*.35)));
       let pole=add(scl(fw,leg.u<.5?-1:1),V(0,.25,0)); // elbow back, knee forward
       if(broken){pole=nrm(add(pole,scl(bs,leg.s*1.6)));ankleT[1]=Math.max(ankleT[1]-fs*.45,fs*.25);}
@@ -1182,6 +1217,7 @@ function buildSkeleton(cr,dt){
         }
       }
       kneeJ=knee;
+      }
     }else{
       // posture morphs the joint: sprawled side-poles → upright forward-poles
       const out=(P.mode==='spider'?.95:.9)-.4*st.posture;
