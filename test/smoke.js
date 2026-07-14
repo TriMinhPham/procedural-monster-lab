@@ -76,8 +76,39 @@ vm.runInContext(`
       '| air:', st.air.toFixed(2), '| rest:', st.rest.toFixed(2));
   }
   st.roam = false;
+  initCreature('skink'); st.roam = false;
   st.target = [2, 0, 1];
   __drive(600); __check('skink');
+
+  initCreature('mycora'); st.roam = false; st.target = [3.5, 0, -2];
+  if (!P.mycora) throw new Error('mycora missing organic body-plan flag');
+  if (st.pairsN !== 3) throw new Error('mycora should have six walking legs: ' + st.pairsN);
+  if (!(st.sodLook.k2 > st.sodChest.k2)) throw new Error('mycora head frequency must trail torso');
+  if (!(st.crownDyn[4].k2 > st.crownDyn[0].k2)) throw new Error('crown frequencies are not layered');
+  if (!(st.tailDyn.at(-1).k2 > st.tailDyn[0].k2)) throw new Error('tail tip must lag tail root');
+  if (!(st.gestureDyn.lash.k3 < 0)) throw new Error('tendril lash needs negative-response anticipation');
+  __drive(420); __check('mycora-walk');
+  startAction('attack');
+  let minLash = st.lash;
+  for (let i = 0; i < 20; i++) { __drive(1); minLash = Math.min(minLash, st.lash); }
+  if (minLash > -0.002) throw new Error('mycora lash did not mathematically wind up: ' + minLash);
+  if (st.bloom < 0.45 || st.lash < 0.45)
+    throw new Error('mycora tendril attack did not unfurl: bloom=' + st.bloom + ' lash=' + st.lash);
+  if (st.bio < 0.5) throw new Error('mycora attack did not flare: ' + st.bio);
+  __check('mycora-tendril'); __drive(80);
+  startAction('dash'); __drive(12);
+  if (st.spin < 0.45 || st.coil < 0.45)
+    throw new Error('mycora spiral missing body layers: spin=' + st.spin + ' coil=' + st.coil);
+  __check('mycora-spiral'); __drive(60);
+  startAction('special'); __drive(55);
+  if (st.ritual < 0.65 || st.bloom < 0.75 || st.bio < 1)
+    throw new Error('mycora bloom ritual stayed closed: ritual=' + st.ritual +
+      ' bloom=' + st.bloom + ' bio=' + st.bio);
+  if (nSoft + nHard < 54) throw new Error('mycora spore motes missing from SDF list');
+  __check('mycora-bloom'); __drive(150);
+  startAction('jump'); __drive(20);
+  if (!(st.jumpY > 0.02 || st.jumpVy > 0)) throw new Error('mycora vault has no lift');
+  __drive(140); __check('mycora-vault-landed');
 
   initCreature('rex'); st.target = [3, 0, -2];
   __drive(500); __check('rex-walk');

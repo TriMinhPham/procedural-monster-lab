@@ -43,6 +43,10 @@
   .sect:first-child{margin-top:2px;}
   .prow{display:flex;gap:6px;flex-wrap:wrap;}
   #presets button{flex:1 1 30%;}
+  .specimen{margin-top:9px;padding:9px 10px;border:1px solid var(--glass-line);border-radius:7px;
+    background:rgba(0,0,0,.12);font-family:var(--mono);line-height:1.45;}
+  .specimen b{display:block;color:var(--ink);font-size:10px;letter-spacing:.16em;font-weight:600;}
+  .specimen span{display:block;color:var(--ink-dim);font-size:8.5px;letter-spacing:.04em;margin-top:3px;}
   .prow button{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
     padding:7px 0;background:transparent;border:1px solid var(--glass-line);border-radius:6px;
     color:var(--ink-dim);cursor:pointer;}
@@ -59,6 +63,9 @@
   input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--amber);border:none;}
   .note{font-family:var(--mono);font-size:9px;letter-spacing:.05em;color:var(--ink-dim);
     line-height:1.5;margin-top:6px;}
+  .cadence{font-family:var(--mono);font-size:8.5px;letter-spacing:.05em;color:var(--amber);
+    line-height:1.55;margin-top:8px;padding:7px 8px;border-left:2px solid var(--amber-soft);
+    background:rgba(232,176,78,.05);}
   .checks{display:flex;flex-direction:column;gap:7px;}
   .checks label{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;
     letter-spacing:.08em;color:var(--ink);cursor:pointer;}
@@ -80,7 +87,7 @@
   <div class="t1">PROCEDURAL <b>MONSTER</b> LAB</div>
   <div class="t2">SDF TUBE METHOD · IK GAIT · SECOND-ORDER DYNAMICS</div>
 </div>
-<div class="hints"><span>CLICK</span> GROUND TO CALL IT · <span>DRAG</span> ORBIT · <span>SCROLL</span> ZOOM · <span>A</span> ATTACK · <span>␣</span> JUMP · <span>D</span> DASH · <span>R</span> REST</div>
+<div class="hints"><span>CLICK</span> GROUND TO CALL IT · <span>DRAG</span> ORBIT · <span>A</span> ATTACK · <span>␣</span> JUMP · <span>D</span> DASH · <span>S</span> SPECIAL · <span>R</span> REST</div>
 
 <button class="ptoggle" id="ptoggle" aria-label="Toggle controls">◧</button>
 <div class="panel" id="panel">
@@ -92,13 +99,16 @@
     <button data-p="rex">REX</button>
     <button data-p="wyvern">WYVERN</button>
     <button data-p="rathalos">RATHALOS</button>
+    <button data-p="mycora">MYCORA</button>
   </div>
+  <div class="specimen" aria-live="polite"><b id="specimenName"></b><span id="specimenDesc"></span></div>
 
-  <div class="sect">ACTIONS · A ␣ D R</div>
+  <div class="sect">ACTIONS · A ␣ D S R</div>
   <div class="prow" id="actions">
-    <button data-a="attack">ATTACK</button>
-    <button data-a="jump">JUMP</button>
-    <button data-a="dash">DASH</button>
+    <button data-a="attack" id="btnAttack">ATTACK</button>
+    <button data-a="jump" id="btnJump">JUMP</button>
+    <button data-a="dash" id="btnDash">DASH</button>
+    <button data-a="special" id="btnSpecial">SPECIAL</button>
     <button data-a="rest" id="btnRest">REST</button>
   </div>
 
@@ -110,6 +120,7 @@
   <div class="ctl"><label>response r <output id="or"></output></label>
     <input type="range" id="sr" min="-2" max="3" step="0.05"></div>
   <div class="note">ζ&lt;1 bouncy · r&gt;1 overshoot · r&lt;0 anticipation (winds up before moving)</div>
+  <div class="cadence" id="cadenceNote"></div>
 
   <div class="sect">MORPH</div>
   <div class="ctl"><label>leg length <output id="ol"></output></label>
@@ -159,6 +170,8 @@ const nrm=a=>{const l=len(a)||1e-9;return scl(a,1/l);};
 const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const ease=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
+const envelope=(t,a,b,c,d)=>ease((t-a)/(b-a))*(1-ease((t-c)/(d-c)));
 
 // ---------- Phase V: second-order dynamics ----------
 // y'' + k1 y' + ... — integrated with semi-implicit Euler.
@@ -176,6 +189,23 @@ class SOD3{
       this.yd[i]+=T*(x[i]+this.k3*xd-this.y[i]-this.k1*this.yd[i])/k2s; // …then velocity
     }
     this.xp=[...x];
+    return this.y;
+  }
+}
+
+// Scalar companion for action channels. Feeding it a simple intent signal
+// produces the timing curve: negative response anticipates, low damping
+// overshoots, and frequency decides how quickly the gesture catches up.
+class SOD1{
+  constructor(f,z,r,x0=0){this.set(f,z,r);this.xp=x0;this.y=x0;this.yd=0;}
+  set(f,z,r){const w=2*Math.PI*f;this.k1=z/(Math.PI*f);this.k2=1/(w*w);this.k3=r*z/w;}
+  reset(x0=0){this.xp=x0;this.y=x0;this.yd=0;}
+  update(T,x){
+    const k2s=Math.max(this.k2,T*T/2+T*this.k1/2,T*this.k1);
+    const xd=(x-this.xp)/T;
+    this.y+=T*this.yd;
+    this.yd+=T*(x+this.k3*xd-this.y-this.k1*this.yd)/k2s;
+    this.xp=x;
     return this.y;
   }
 }
@@ -246,6 +276,16 @@ const PRESETS={
     wings:true, wingScale:1.85,
     ears:false, antennae:false, palps:false, spikesDefault:true,
     dyn:[2.0,.55,1.05], pal:'rathalos', k:.055
+  },
+  mycora:{ // alien fungal reef-walker: radial crown, breathing gills, forked tendril tail
+    pairs:3, mode:'spider', mycora:true, forkTail:true,
+    bodyLen:1.12, chestH:.52, hipH:.43, chestR:.29, midR:.22, hipR:.24,
+    neckLen:.36, neckUp:.20, headR:.17, headLen:.28, snout:.28,
+    lu:.47, ll:.43, legR:.043, stance:[.56,.68,.50], lead:[.28,.02,-.24],
+    stepThresh:.27, stepDur:.14, stepH:.18, speed:1.8, stride:.48,
+    undulate:.05, tailN:6, tailLen:1.28, bob:.028, post:.42,
+    ears:false, antennae:false, palps:false, spikesDefault:false,
+    dyn:[2.65,.38,1.55], pal:'mycora', k:.072
   }
 };
 
@@ -257,8 +297,19 @@ const PALETTES={
   dusk :['#8a6fae','#e3d3e9','#5d4a85','#3d2f5c','#e8b04e','#f0e6d2'],
   fossil:['#7d6a47','#d3c497','#5d4e35','#3e3122','#4db8a8','#e8b04e'],
   rathalos:['#c23a28','#ecd6a8','#8a2e24','#2a1612','#e8b04e','#f0a03a'],
+  mycora:['#4f496f','#b8d6c1','#275f63','#221d38','#ef6f82','#71f5d2'],
 };
 const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
+
+const SPECIMEN_COPY={
+  skink:['SKINK','Low-slung reptile · planted sprawled gait'],
+  beast:['BEAST','Elastic mammal · three-bone zigzag legs'],
+  bug:['BUG','Tripod scuttler · antenna dynamics'],
+  rex:['REX','Counterweighted theropod · hinged jaw'],
+  wyvern:['WYVERN','Biped flyer · folding procedural wings'],
+  rathalos:['RATHALOS','Armored sky king · crown and tail club'],
+  mycora:['MYCORA · THE HOLLOW BLOOM','Fungal reef-walker · radial crown · corkscrew tail · spore ritual'],
+};
 
 // ---------- creature state ----------
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -266,7 +317,7 @@ let P=null, presetName='';
 const st={
   leader:V(0,0,0), vel:V(), target:V(2,0,1), lookPt:V(3,.4,1),
   chest:null, hip:V(-1,0,0), phase:0, speedN:0,
-  legs:[], tail:[], antTips:[],
+  legs:[], tail:[], tailDyn:[], antTips:[], crownDyn:[], gestureDyn:null,
   sodChest:null, sodLook:null,
   nextThink:0, idleLook:0, clickT:-9,
   legScale:1, radScale:1, wobble:0,
@@ -275,6 +326,7 @@ const st={
   wings:false, wOpen:0, air:0, flap:0,
   restOn:false, rest:0,
   act:null, actT:0, _struck:false, jawEnv:0,
+  bloom:0, lash:0, coil:0, spin:0, ritual:0, bio:0,
   jumpY:0, jumpVy:0, crouch:0, imp:V(), fw:V(1,0,0),
   eyeScale:1, blinkNext:2, blinkT:-1,
   pairsN:2, posture:.5, hMul:1,
@@ -286,25 +338,50 @@ function initCreature(name){
   st.leader=[keep[0],P.chestH,keep[2]];
   st.vel=V();
   st.sodChest=new SOD3(...P.dyn,st.leader);
-  st.sodLook =new SOD3(P.dyn[0]*1.2,P.dyn[1],P.dyn[2],add(st.leader,V(1,0,0)));
+  const headF=P.dyn[0]*(P.mycora ? .56 : .72);
+  st.sodLook =new SOD3(headF,Math.max(.24,P.dyn[1]*.88),P.dyn[2],add(st.leader,V(1,0,0)));
   st.hip=add(st.leader,V(-P.bodyLen,0,0)); st.hip[1]=P.hipH;
   // legs (Universal Limb Class, any pair count)
   buildLegs(P.pairs);
   // tail
-  st.tail=[];
+  st.tail=[];st.tailDyn=[];
   const segL=P.tailN?P.tailLen/P.tailN:0;
-  for(let i=0;i<P.tailN;i++) st.tail.push(add(st.hip,V(-(i+1)*segL,0,0)));
+  for(let i=0;i<P.tailN;i++){
+    const p=add(st.hip,V(-(i+1)*segL,0,0));st.tail.push(p);
+    if(P.mycora){
+      const u=i/Math.max(1,P.tailN-1);
+      st.tailDyn.push(new SOD3(P.dyn[0]*(.72-.32*u),.28+.12*u,1.35,p));
+    }
+  }
   // antenna tips (second-order wobble — Phase VI wobble towers)
   st.antTips=[new SOD3(2.8,.32,1.8,add(st.leader,V(0,.5,.2))),
               new SOD3(2.8,.32,1.8,add(st.leader,V(0,.5,-.2)))];
+  st.crownDyn=P.mycora?Array.from({length:5},(_,k)=>{
+    const p=add(st.leader,V(.16,.25+(k%2)*.06,(k-2)*.07));
+    return new SOD3(P.dyn[0]*(.78-k*.055),.24+k*.035,1.45,p);
+  }):[];
+  st.gestureDyn={
+    bloom:new SOD1(1.45,.52,.85,0),
+    lash:new SOD1(3.25,.32,-1.85,0),
+    coil:new SOD1(2.1,.40,1.35,0),
+    spin:new SOD1(2.5,.48,1.15,0),
+    ritual:new SOD1(1.05,.70,.72,0),
+    bio:new SOD1(2.35,.38,1.5,P.mycora ? .18 : 0),
+  };
   st.spikes=P.spikesDefault; st.hat=false; st.pal=P.pal;
   st.wings=!!P.wings; st.air=0; st.wOpen=0; st.flap=0;
   st.restOn=false; st.rest=0; st.act=null; st.jawEnv=0;
+  st.bloom=0;st.lash=0;st.coil=0;st.spin=0;st.ritual=0;st.bio=P.mycora ? .18 : 0;
   st.jumpY=0; st.jumpVy=0; st.crouch=0; st.imp=V();
   st.posture=P.post;
   if(name==='rex')cam.dist=Math.max(cam.dist,8.5);
   if(name==='wyvern')cam.dist=Math.max(cam.dist,7.5);
   if(name==='rathalos')cam.dist=Math.max(cam.dist,9);
+  if(name==='mycora'){
+    cam.dist=Math.max(cam.dist,6.9);
+    st.target=[st.leader[0],0,st.leader[2]];
+    if(!REDUCED){st.act='special';st.actT=0;} // arrival flourish reveals the whole silhouette
+  }
   dyn.f=P.dyn[0]; dyn.z=P.dyn[1]; dyn.r=P.dyn[2];
   syncUI();
 }
@@ -328,20 +405,78 @@ function simulate(dt){
   const t=st.time;
 
   // --- actions: procedural overlays, no keyframes ---
+  // Mycora layers several envelopes at once: its crown blooms, body coils,
+  // tendrils lash, and luminous organs flare on independent timings.
+  let bloomT=P.mycora ? .24+.06*Math.sin(t*1.3) : 0, lashT=0, coilT=0,
+      spinT=0, ritualT=0, bioT=P.mycora ? .18 : 0;
   if(st.act){
     st.actT+=dt; const q=st.actT;
     if(st.act==='attack'){
-      st.jawEnv=Math.sin(Math.PI*clamp(q/.55,0,1));
-      if(q<.16)st.imp=add(st.imp,scl(st.fw,-2.6*dt));            // wind-up recoil
-      else if(!st._struck){st._struck=true;st.imp=add(st.imp,scl(st.fw,4.4));} // lunge
-      if(q>.7){st.act=null;st._struck=false;}
+      if(P.mycora){
+        bloomT=.18+.82*envelope(q,.0,.22,.62,1.12);
+        lashT=q>.13&&q<.56 ? 1 : 0;
+        coilT=envelope(q,.0,.18,.44,.88);
+        spinT=.45*envelope(q,.08,.28,.58,1.02);
+        bioT=.25+1.15*envelope(q,.08,.30,.56,1.05);
+        st.jawEnv=envelope(q,.02,.25,.58,1.02);
+        if(q<.24)st.imp=add(st.imp,scl(st.fw,-2.1*dt));
+        else if(!st._struck){st._struck=true;st.imp=add(st.imp,scl(st.fw,3.8));}
+        if(q>1.18){st.act=null;st._struck=false;}
+      }else{
+        st.jawEnv=Math.sin(Math.PI*clamp(q/.55,0,1));
+        if(q<.16)st.imp=add(st.imp,scl(st.fw,-2.6*dt));          // wind-up recoil
+        else if(!st._struck){st._struck=true;st.imp=add(st.imp,scl(st.fw,4.4));}
+        if(q>.7){st.act=null;st._struck=false;}
+      }
     }else if(st.act==='dash'){
-      if(q>.38)st.act=null;
+      if(P.mycora){
+        coilT=.9*envelope(q,0,.08,.42,.68);
+        spinT=envelope(q,0,.06,.46,.72);
+        bloomT=.08+.34*envelope(q,0,.12,.4,.7);
+        bioT=.3+.65*envelope(q,0,.08,.4,.68);
+        if(q>.72)st.act=null;
+      }else if(q>.38)st.act=null;
     }else if(st.act==='jump'){
       st.crouch=Math.min(q/.14,1);                               // squash before…
-      if(q>=.14){st.act=null;if(st.jumpY<=0)st.jumpVy=3.4;}      // …launch
+      if(P.mycora){bloomT=.05;coilT=.65;bioT=.48;}
+      if(q>=.14){st.act=null;if(st.jumpY<=0)st.jumpVy=P.mycora ? 3.8 : 3.4;} // …launch
+    }else if(st.act==='special'){
+      if(P.mycora){
+        ritualT=envelope(q,.05,.42,1.72,2.28);
+        bloomT=.12+.88*envelope(q,.0,.34,1.82,2.30);
+        spinT=envelope(q,.28,.64,1.70,2.25);
+        coilT=.55*envelope(q,.0,.30,1.82,2.28);
+        bioT=.3+1.7*envelope(q,.18,.64,1.75,2.32);
+        st.jawEnv=envelope(q,.12,.48,1.72,2.25);
+        if(q<.30)st.crouch=Math.max(st.crouch,ease(q/.30));
+        if(q>2.34){st.act=null;st._struck=false;}
+      }else{
+        st.jawEnv=Math.sin(Math.PI*clamp(q/.85,0,1));
+        st.crouch=.18*Math.sin(Math.PI*clamp(q/.85,0,1));
+        if(q>.9)st.act=null;
+      }
     }
   }else st.jawEnv*=Math.exp(-9*dt);
+  if(P.mycora&&st.jumpY>0){
+    const airborne=clamp(st.jumpY/.7,0,1);
+    bloomT=Math.max(bloomT,.35+.4*airborne);coilT=Math.max(coilT,.45*airborne);bioT=.35;
+  }
+  if(P.mycora){
+    st.bloom=clamp(st.gestureDyn.bloom.update(dt,bloomT),-.08,1.25);
+    st.lash=clamp(st.gestureDyn.lash.update(dt,lashT),-.20,1.30);
+    st.coil=clamp(st.gestureDyn.coil.update(dt,coilT),-.12,1.25);
+    st.spin=clamp(st.gestureDyn.spin.update(dt,spinT),-.12,1.25);
+    st.ritual=clamp(st.gestureDyn.ritual.update(dt,ritualT),0,1.18);
+    st.bio=clamp(st.gestureDyn.bio.update(dt,bioT),0,2.4);
+  }else{
+    const organicFollow=1-Math.exp(-dt*8);
+    st.bloom+=(bloomT-st.bloom)*organicFollow;
+    st.lash+=(lashT-st.lash)*organicFollow;
+    st.coil+=(coilT-st.coil)*organicFollow;
+    st.spin+=(spinT-st.spin)*organicFollow;
+    st.ritual+=(ritualT-st.ritual)*(1-Math.exp(-dt*5));
+    st.bio+=(bioT-st.bio)*(1-Math.exp(-dt*7));
+  }
   st.crouch*=Math.exp(-6*dt);
   st.imp=scl(st.imp,Math.exp(-5.5*dt));
   if(st.jumpVy!==0||st.jumpY>0){                                 // ballistic arc
@@ -355,7 +490,7 @@ function simulate(dt){
   const dist=len(toT);
   // winged creatures take off for far calls, land near them
   st.air+=(((st.wings&&!st.restOn&&dist>2.3)?1:0)-st.air)*Math.min(1,dt*1.5);
-  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95);
+  const maxSpd=P.speed*(1+st.air*1.3)*(st.act==='dash'?3.2:1)*(1-st.rest*.95)*(1-st.ritual*.96);
   const desired=dist>.45?scl(nrm(toT),Math.min(maxSpd,dist*1.8)):V();
   const k=1-Math.exp(-4*dt);
   st.vel=mix(st.vel,desired,k);
@@ -365,7 +500,7 @@ function simulate(dt){
   const legHF=P.mode==='zigzag'?(1+(st.legScale-1)*.8):1;
   st.hMul=postHF*legHF*(1-.16*st.crouch)*(1-.55*st.rest);
   const groundY=P.chestH*st.hMul;
-  st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY;
+  st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY+st.ritual*.34;
   const speed=len(st.vel);
   st.speedN=clamp(speed/P.speed,0,1);
 
@@ -385,7 +520,11 @@ function simulate(dt){
   const wTgt=st.wings?(st.air>.03?1:(st.speedN>.75?.3:0)):0;
   st.wOpen+=(wTgt-st.wOpen)*Math.min(1,dt*3);
   if(st.wOpen>.02)st.flap+=dt*Math.PI*2*(1.5+2.1*st.air);
+  const gaitHobble=P.mycora
+    ?(Math.sin(st.phase*Math.PI*6+.8)*.018+Math.sin(st.phase*Math.PI*3)*.012)*st.speedN
+    :0;
   const bobY=Math.sin(st.phase*Math.PI*4)*P.bob*st.speedN*(1-st.air) // gait bob
+            +gaitHobble                                             // independent shoulder cadence
             +Math.sin(t*1.7)*.006*(1+st.rest*1.6)                    // breathing
             +st.air*Math.sin(st.flap)*.05;                           // wingbeat heave
   st.chest=[chestS[0],chestS[1]+bobY,chestS[2]];
@@ -400,7 +539,9 @@ function simulate(dt){
 
   // --- look point (also second-order → overshoot/anticipation shows in the head) ---
   let want;
-  if(st.act==='attack'&&st.actT>.12) want=add(st.chest,add(scl(st.fw,2.2),V(0,-.15,0)));
+  if(P.mycora&&st.act==='special')
+    want=add(st.chest,add(scl(st.fw,.65),add(V(0,.75,0),scl(side,Math.sin(t*2.4)*.25))));
+  else if(st.act==='attack'&&st.actT>.12) want=add(st.chest,add(scl(st.fw,2.2),V(0,-.15,0)));
   else if(st.rest>.4) want=add(st.chest,add(scl(st.fw,.9),V(0,-st.rest*.45,0)));
   else if(speed>.3) want=[st.target[0],.35,st.target[2]];
   else{
@@ -419,11 +560,12 @@ function simulate(dt){
   const spinePt=u=>mix(st.chest,st.hip,u);
   const stanceMul=(P.mode==='zigzag'?1.15-.2*st.posture:1.3-.75*st.posture)
                  *(P.mode==='sprawl'?ls:1)*(1-.45*st.rest);
-  const tucked=st.air>.5||st.jumpY>.14;
+  const tucked=st.air>.5||st.jumpY>.14||st.ritual>.30;
   for(const leg of st.legs){
     if(tucked){ // feet fold under the body in flight and mid-jump
       const tuck=add(spinePt(leg.u),add(scl(side,leg.s*leg.stance*.5),
-        add(scl(fw,-.08),V(0,-(P.lu+P.ll)*ls*.42,0))));
+        add(scl(fw,-.08+Math.sin(t*4+leg.j*1.8+leg.s)*.05*(P.mycora?1:0)),
+            V(0,-(P.lu+P.ll)*ls*(.42-.12*st.ritual),0))));
       leg.foot=mix(leg.foot,tuck,Math.min(1,dt*8));
       leg.stepping=false;
       continue;
@@ -485,7 +627,10 @@ function buildSkeleton(dt){
   const S=(a,b,r1,r2,m,list)=>list.push([a, (a===b?add(b,V(0,1e-4,0)):b), r1,r2,m]);
 
   // torso tube (with skink undulation)
-  const lat=Math.sin(st.phase*Math.PI*2)*P.undulate*st.speedN;
+  const organicLat=P.mycora
+    ?Math.sin(t*2.25)*.025+st.coil*(.16*Math.sin(t*5.2)+.08*st.spin)
+    :0;
+  const lat=Math.sin(st.phase*Math.PI*2)*P.undulate*st.speedN+organicLat;
   const midPt=add(mix(st.chest,st.hip,.5),scl(side,lat));
   const breathe=1+Math.sin(t*1.7)*.02;
   S(st.chest,midPt,P.chestR*rs*breathe,P.midR*rs,1,soft);
@@ -506,6 +651,62 @@ function buildSkeleton(dt){
   S(neckBase,head,P.chestR*rs*.62,P.headR*rs*.95,1,soft);
   S(sub(head,scl(hf,P.headLen*.35)),add(head,scl(hf,P.headLen*.5)),
     P.headR*rs,P.headR*rs*P.snout,1,soft);
+
+  // Mycora's head is a living flower rather than a skull. Five crown arms
+  // follow different phases, the lead arm lashes, and side gills pulse from
+  // front to back like a visible breath traveling through the body.
+  if(P.mycora){
+    const crown=add(head,add(scl(hu,.09),scl(hf,-.035)));
+    S(crown,crown,P.headR*rs*1.08,P.headR*rs*1.08,1,soft);
+    for(let k=0;k<5;k++){
+      const a=k/5*Math.PI*2+t*2.2*st.spin;
+      const radial=nrm(add(scl(hs,Math.cos(a)),
+        add(scl(hu,.62+Math.sin(a)*.58),scl(hf,-.12+.09*Math.sin(a*2)))));
+      const lag=Math.sin(t*2.7-k*.85+st.phase*Math.PI*2)*(.022+.045*st.bloom);
+      const base=add(crown,scl(radial,.05));
+      let mid=add(crown,add(scl(radial,.14+.20*st.bloom),
+          add(scl(hf,-.035+lag),scl(hu,.035*st.bloom))));
+      let tip=add(crown,add(scl(radial,.24+.40*st.bloom),
+          add(scl(hf,-.08+lag*2),scl(hu,.07*st.bloom))));
+      if(k===0){
+        mid=add(mid,add(scl(hf,st.lash*.28),scl(hu,-st.lash*.05)));
+        tip=add(tip,add(scl(hf,st.lash*.78),scl(hu,-st.lash*.13)));
+      }
+      if(st.crownDyn[k]){
+        tip=[...st.crownDyn[k].update(dt,tip)];
+      }
+      S(base,mid,.052*rs,.027*rs,k%2?2:1,hard);
+      S(mid,tip,.030*rs,.016,6,hard);
+    }
+    // A luminous feeding siphon telescopes out of the radial mouth.
+    const siphonBase=add(head,scl(hf,P.headLen*.23));
+    const siphonTip=add(siphonBase,scl(hf,.06+.43*st.jawEnv+.18*st.lash));
+    S(siphonBase,siphonTip,.052*rs,.016,6,soft);
+
+    for(let j=0;j<3;j++)for(const s of[1,-1]){
+      const u=.18+j*.29, p=mix(st.chest,st.hip,u);
+      const br=(P.chestR+(P.hipR-P.chestR)*u)*rs;
+      const pulse=.5+.5*Math.sin(t*2.5-j*.85+s*.28);
+      const gillBase=add(p,add(scl(side,s*br*.58),V(0,br*.17,0)));
+      const gillDir=nrm(add(scl(side,s),add(scl(hu,.22+.18*pulse),scl(fw,-.28))));
+      S(gillBase,add(gillBase,scl(gillDir,.13+.10*pulse+.07*st.bloom)),
+        .041*rs,.006,6,soft);
+    }
+    // Uneven mantle lobes and dorsal lantern nodules keep the silhouette
+    // deliberately organic instead of bilaterally perfect.
+    for(const s of[1,-1]){
+      const podBase=add(st.chest,add(scl(side,s*P.chestR*.48),V(0,P.chestR*.35,0)));
+      const podLen=s>0 ? .22 : .13;
+      S(podBase,add(podBase,add(scl(side,s*podLen),V(0,.08+s*.018,0))),
+        .095*(s>0 ? 1.15 : .8)*rs,.025,1,soft);
+    }
+    for(let j=0;j<3;j++){
+      const p=mix(st.chest,st.hip,.24+j*.27);
+      const bulb=add(p,V(0,(P.chestR+(P.hipR-P.chestR)*(.24+j*.27))*.78,0));
+      const rr=(.035+.012*Math.sin(t*2.5-j*.85))*rs*(1+.28*st.bio);
+      S(bulb,bulb,rr,rr,6,soft);
+    }
+  }
 
   // jaw — hinges open during attacks
   if(P.jaw){
@@ -616,8 +817,15 @@ function buildSkeleton(dt){
       const sw=Math.sin(st.phase*Math.PI*2-i*.55)*(.16*st.speedN+.04)
               +Math.sin(t*1.3+i*.4)*.06;
       const rest=nrm(add(scl(fw,-1),add(V(0,-.06+i*.03,0),scl(side,sw))));
-      let dir=nrm(sub(st.tail[i],prev));
-      dir=nrm(mix(dir,rest,clamp(dt*4,0,1)));
+      let dir;
+      if(P.mycora&&st.tailDyn[i]){
+        const target=add(prev,scl(rest,segL));
+        const sprung=st.tailDyn[i].update(dt,target);
+        dir=nrm(sub(sprung,prev));
+      }else{
+        dir=nrm(sub(st.tail[i],prev));
+        dir=nrm(mix(dir,rest,clamp(dt*4,0,1)));
+      }
       st.tail[i]=add(prev,scl(dir,segL));
       st.tail[i][1]=Math.max(st.tail[i][1],.03);
       const r1=(P.hipR*.7)*(1-i/P.tailN)*rs+.015;
@@ -638,6 +846,16 @@ function buildSkeleton(dt){
         const d=nrm(add(scl(td,.28),add(scl(ts,Math.cos(a)*.85),scl(tu,Math.sin(a)*.85))));
         const b=add(bulb,scl(d,bulbR*.55));
         S(b,add(b,scl(d,bulbR*1.15)),bulbR*.38,.004,3,hard);
+      }
+    }
+    if(P.forkTail&&P.tailN>=2){
+      const tip=st.tail[P.tailN-1], prevT=st.tail[P.tailN-2];
+      const td=nrm(sub(tip,prevT)), tu=nrm(cross(side,td));
+      for(const s of[1,-1]){
+        const curl=Math.sin(t*2.8+s*1.4+st.phase*Math.PI*2)*.10;
+        const branch=nrm(add(td,add(scl(side,s*(.42+.28*st.spin)),scl(tu,curl+st.coil*.22))));
+        const end=add(tip,scl(branch,.28+.11*st.lash));
+        S(tip,end,.032*rs,.006,s>0 ? 6 : 2,soft);
       }
     }
   }
@@ -673,8 +891,24 @@ function buildSkeleton(dt){
   // hard prims (plain min — they stay crisp): eyes + hat
   for(const s of[1,-1]){
     const e=add(head,add(scl(hf,P.headLen*.16),add(scl(hs,s*P.headR*.72),scl(hu,P.headR*.34))));
-    const er=Math.max(P.headR*(P.mode==='spider'?.42:.3)*st.eyeScale,.012);
+    const eyeK=P.mycora ? .27 : (P.mode==='spider' ? .42 : .3);
+    const er=Math.max(P.headR*eyeK*st.eyeScale,.012);
     S(e,e,er,er,4,hard);
+  }
+  if(P.mycora){
+    const third=add(head,add(scl(hf,P.headLen*.24),scl(hu,P.headR*.78)));
+    const tr=Math.max(P.headR*.21*st.eyeScale,.012);
+    S(third,third,tr,tr,4,hard);
+    // Spore motes only exist during BLOOM. Their radius and orbit are driven
+    // by the ritual envelope, so the effect remains part of the SDF body list.
+    if(st.ritual>.015)for(let k=0;k<5;k++){
+      const a=k/5*Math.PI*2+t*(.8+k*.07);
+      const rr=.20+st.ritual*(.58+.11*(k%2));
+      const p=add(st.chest,add(scl(side,Math.cos(a)*rr),
+        add(scl(fw,Math.sin(a)*rr),V(0,.18+st.ritual*(.18+.12*Math.sin(a*2+k)),0))));
+      const sr=.022+st.ritual*(.025+.006*(k%2));
+      S(p,p,sr,sr,6,hard);
+    }
   }
   if(P.teeth)for(let i=0;i<3;i++){
     const b=add(head,add(scl(hf,P.headLen*(.14+.13*i)),scl(hu,-P.headR*rs*.40)));
@@ -715,7 +949,7 @@ gl_Position=vec4(v*2.-1.,0.,1.);}`;
 const FS=`#version 300 es
 precision highp float;
 out vec4 O;
-uniform vec2 uRes; uniform float uTime,uTanF,uK,uWob,uBound,uMark;
+uniform vec2 uRes; uniform float uTime,uTanF,uK,uWob,uBound,uMark,uBio;
 uniform vec3 uCamPos,uCenter,uSun,uTargetPos;
 uniform mat3 uCamRot;
 uniform int uNSoft,uNHard;
@@ -848,6 +1082,7 @@ void main(){
     vec3 hv=normalize(uSun-rd);
     col+=vec3(1.,.9,.75)*pow(clamp(dot(n,hv),0.,1.),shin)*spk*dif;
     col+=vec3(.55,.55,.6)*fre*.18*ao*(mi==0?0.:1.);
+    if(mi==6)col+=uPal[5]*uBio*(.10+.28*fre)*ao;
     col=mix(col,sky(rd),1.-exp(-.0022*t*t));
   }
   col=pow(col,vec3(.4545));
@@ -872,7 +1107,7 @@ try{prog=makeProg(VS,FS);}catch(e){
 }
 gl.useProgram(prog);
 const U={};
-for(const n of['uRes','uTime','uTanF','uK','uWob','uBound','uMark','uCamPos','uCenter',
+for(const n of['uRes','uTime','uTanF','uK','uWob','uBound','uMark','uBio','uCamPos','uCenter',
   'uSun','uTargetPos','uCamRot','uNSoft','uNHard','uA','uB','uMatId','uPal'])
   U[n]=gl.getUniformLocation(prog,n);
 const SUN=nrm(V(-.45,.62,-.38));
@@ -957,7 +1192,25 @@ bindSlider('spairs','opairs',v=>buildLegs(Math.round(v)));
 bindSlider('spost','opost',v=>st.posture=v);
 function applyDyn(){
   st.sodChest.set(dyn.f,dyn.z,dyn.r);
-  st.sodLook.set(dyn.f*1.2,dyn.z,dyn.r);
+  st.sodLook.set(dyn.f*(P.mycora ? .56 : .72),Math.max(.24,dyn.z*.88),dyn.r);
+  if(P.mycora&&st.gestureDyn){
+    st.gestureDyn.bloom.set(Math.max(.35,dyn.f*.60),clamp(dyn.z*.95,.24,1.4),dyn.r*.55);
+    st.gestureDyn.lash.set(Math.max(.55,dyn.f*1.23),clamp(dyn.z*.65,.18,1.1),dyn.r-3.4);
+    st.gestureDyn.coil.set(Math.max(.45,dyn.f*.80),clamp(dyn.z*.78,.20,1.2),dyn.r*.88);
+    st.gestureDyn.spin.set(Math.max(.55,dyn.f*.95),clamp(dyn.z*.88,.22,1.3),dyn.r*.76);
+    st.gestureDyn.ritual.set(Math.max(.30,dyn.f*.40),clamp(dyn.z*1.5,.38,1.5),dyn.r*.46);
+    st.gestureDyn.bio.set(Math.max(.55,dyn.f*.90),clamp(dyn.z*.68,.18,1.1),dyn.r*.96);
+    st.crownDyn.forEach((sod,k)=>sod.set(
+      Math.max(.35,dyn.f*(.78-k*.055)),clamp(dyn.z*.64+k*.035,.18,1.1),dyn.r*.92));
+    st.tailDyn.forEach((sod,i)=>{
+      const u=i/Math.max(1,st.tailDyn.length-1);
+      sod.set(Math.max(.28,dyn.f*(.72-.32*u)),clamp(dyn.z*.74+u*.08,.20,1.2),dyn.r*.86);
+    });
+  }
+  const note=$('cadenceNote');
+  if(note)note.textContent=P.mycora
+    ?`LIVE LAYERS · torso ${fmt(dyn.f)}Hz · head ${fmt(dyn.f*.56)}Hz · crown ${fmt(dyn.f*.78)}→${fmt(dyn.f*.56)}Hz · tail ${fmt(dyn.f*.72)}→${fmt(dyn.f*.40)}Hz · lash r ${fmt(dyn.r-3.4)}`
+    :`LIVE LAYERS · torso ${fmt(dyn.f)}Hz · head ${fmt(dyn.f*.72)}Hz`;
 }
 $('ckSpikes').addEventListener('change',e=>st.spikes=e.target.checked);
 $('ckHat').addEventListener('change',e=>st.hat=e.target.checked);
@@ -972,7 +1225,18 @@ function startAction(n){
   }
   if(st.restOn){st.restOn=false;$('btnRest').classList.remove('on');}
   if(n==='jump'&&(st.jumpY>0||st.air>.5))return;
-  if(n==='dash')st.imp=add(st.imp,scl(st.fw,6.5));
+  if(n==='dash'){
+    st.imp=add(st.imp,scl(st.fw,P.mycora ? 5.4 : 6.5));
+    if(P.mycora){
+      const side=nrm(cross(V(0,1,0),st.fw));
+      const turn=Math.sin(st.time*3.17)>0?1:-1;
+      st.imp=add(st.imp,scl(side,turn*1.9));
+    }
+  }
+  if(n==='special'){
+    st.target=[st.leader[0],0,st.leader[2]];
+    st.nextThink=st.time+3;
+  }
   st.act=n;st.actT=0;st._struck=false;
 }
 $('actions').addEventListener('click',e=>{
@@ -984,6 +1248,7 @@ addEventListener('keydown',e=>{
   if(k==='space'){e.preventDefault();startAction('jump');}
   else if(k==='a')startAction('attack');
   else if(k==='d')startAction('dash');
+  else if(k==='s')startAction('special');
   else if(k==='r')startAction('rest');
 });
 $('presets').addEventListener('click',e=>{
@@ -1007,6 +1272,12 @@ function syncUI(){
   $('ckSpikes').checked=st.spikes;$('ckHat').checked=st.hat;$('ckRoam').checked=st.roam;
   $('ckWings').checked=st.wings;
   $('btnRest').classList.toggle('on',st.restOn);
+  const labels=P.mycora
+    ?['TENDRIL','VAULT','SPIRAL','BLOOM','FOLD']
+    :['ATTACK','JUMP','DASH','ROAR','REST'];
+  ['btnAttack','btnJump','btnDash','btnSpecial','btnRest'].forEach((id,i)=>$(id).textContent=labels[i]);
+  const copy=SPECIMEN_COPY[presetName]||[presetName.toUpperCase(),'Procedural specimen'];
+  $('specimenName').textContent=copy[0];$('specimenDesc').textContent=copy[1];
   $('sf').value=dyn.f;$('sz').value=dyn.z;$('sr').value=dyn.r;
   $('of').value=fmt(dyn.f);$('oz').value=fmt(dyn.z);$('or').value=fmt(dyn.r);
   $('ol').value=fmt(st.legScale);$('op').value=fmt(st.radScale);$('ow').value=fmt(st.wobble);
@@ -1027,7 +1298,8 @@ function resize(){
 addEventListener('resize',resize);
 
 // ---------- main loop ----------
-initCreature('skink');
+const initialPreset=new URLSearchParams(location.search).get('preset');
+initCreature(PRESETS[initialPreset]?initialPreset:'mycora');
 const palBuf=new Float32Array(18);
 let last=performance.now();
 function frame(now){
@@ -1053,6 +1325,7 @@ function frame(now){
   gl.uniform1f(U.uK,P.k*st.radScale);
   gl.uniform1f(U.uWob,st.wobble*.02);
   gl.uniform1f(U.uBound,bRad);
+  gl.uniform1f(U.uBio,st.bio);
   const moving=len(st.vel)>.25;
   gl.uniform1f(U.uMark,Math.max(clamp(1-(st.time-st.clickT)/1.6,0,1),moving?.35:0));
   gl.uniform3f(U.uCamPos,...cam.pos);
