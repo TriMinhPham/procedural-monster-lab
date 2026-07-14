@@ -52,18 +52,22 @@ The quest banner briefs the tells.
   Fable's fixed seed means Fable has a theme of its own.
 
 - **WASD** move · **click / J** attack — 3-hit sword combo · **shift** dash
-  (i-frames) · **space** jump · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
+  (i-frames) · **space** jump · hold **K / right-click** to guard (tap into a
+  hit for a perfect parry) · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
   **M** mute · **P** pixel mode (or `?pixel=1`) — 180p retro render, posterized + dithered ·
   **R / B** after the verdict — retry / back to the board · 3 faints = quest failed
 - **Touch & gamepad**: left-half touches raise a floating stick, right half
-  stays orbit/tap-attack, with a glass DASH·JUMP·POTION·CARVE cluster; on a
+  stays orbit/tap-attack, with a glass DASH·JUMP·GUARD·POTION·CARVE cluster; on a
   pad the sticks move/orbit, **A** attack · **B** dash · **X** jump ·
-  **Y** hold-potion · **RB** carve · **LB** lock-on
+  **LT** guard · **Y** hold-potion · **RB** carve · **LB** lock-on
 - **You hunt as a hunter** — an athletic upright human (≈7.5-head proportions:
   closed helm, shoulder girdle, tapered torso, pelvis, plantigrade boots, and a
   sword carried at the hip). Same limb class as the monsters; forge upgrades add
   breastplate, knee plate, tassets, crest, and gauntlets. Slash · backhand ·
-  overhead heavy, arm IK swings, blade swept as a 5-point probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
+  overhead heavy, aerial cuts, dash-cancels, and a two-hand guard all use full-body
+  procedural motion: heel-to-toe foot roll, planted-leg weight shift, pelvis/ribcage
+  counter-rotation, arm counter-swing, jump balance, and landing recovery. The blade
+  is swept as a 5-point probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
   and attacking out of a dash cancels it into the first slash with the
   momentum folded in.
 - **Stamina is the leash** — dashes and the heavy finisher spend it, regen

@@ -129,7 +129,7 @@
   <div class="t1">MONSTER <b>HUNT</b></div>
   <div class="t2" id="quest2">QUEST 01 · SCARRED CRATER</div>
 </div>
-<div class="hints"><span>WASD</span> MOVE · <span>CLICK/J</span> ATTACK — CHAIN ×3 · <span>⇧</span> DASH i-frames · <span>␣</span> JUMP (over tail swipes) · <span>TAB</span> LOCK-ON · <span>E</span> CARVE · <span>Q</span> POTION ×3 · <span>T</span> TOON · <span>M</span> MUTE</div>
+<div class="hints"><span>WASD</span> MOVE · <span>CLICK/J</span> ATTACK — CHAIN ×3 · <span>⇧</span> DASH i-frames · <span>␣</span> JUMP · <span>K/RMB</span> GUARD/PARRY · <span>TAB</span> LOCK-ON · <span>E</span> CARVE · <span>Q</span> POTION ×3 · <span>T</span> TOON · <span>M</span> MUTE</div>
 
 <div id="hud">
   <div id="hpwrap">
@@ -171,6 +171,7 @@ const nrm=a=>{const l=len(a)||1e-9;return scl(a,1/l);};
 const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const ease01=v=>{v=clamp(v,0,1);return v*v*(3-2*v);};
 
 // ---------- Phase V: second-order dynamics ----------
 // y'' + k1 y' + ... — integrated with semi-implicit Euler.
@@ -464,6 +465,8 @@ function makeCreature(name,opts={}){
     restOn:false, rest:0,
     act:null, actT:0, _struck:false, _slam:false, jawEnv:0,
     jumpY:0, jumpVy:0, crouch:0, imp:V(), fw:V(1,0,0),
+    // humanoid motion layers: all filtered continuously, never pose-switched
+    motionN:0, lean:0, twist:0, land:0, guardHit:0, handR:V(), handL:V(),
     eyeScale:1, blinkNext:2, blinkT:-1,
     pairsN:P.pairs, posture:P.post, hMul:1,
     // hunt state
@@ -502,6 +505,31 @@ function solve2(S,T,l1,l2,pole){
   let n=sub(pole,scl(dir,dot(pole,dir)));
   const nl=len(n); n=nl<1e-4?V(0,1,0):scl(n,1/nl);
   return {knee:add(S,add(scl(dir,l1*cA),scl(n,l1*sA))),foot:Tc};
+}
+
+// Full-body intent for the hunter. Locomotion supplies a low-amplitude
+// counter-twist; actions temporarily take ownership, then ease back into gait.
+function hunterActionMotion(st){
+  const out={lean:0,twist:0,weight:0};
+  if(!st.P.humanoid||!st.act)return out;
+  const q=st.actT;
+  if(st.act==='strike'){
+    const pf=st.actProf, w=pf.wind, a=pf.active, r=pf.rec;
+    const wind=pf.kind==='slash'?-0.42:pf.kind==='backhand'?.38:-.18;
+    const end =pf.kind==='slash'?.48:pf.kind==='backhand'?-.46:.16;
+    if(q<w){const e=ease01(q/w);out.twist=wind*e;out.weight=e;}
+    else if(q<w+a){const e=ease01((q-w)/a);out.twist=wind+(end-wind)*e;out.weight=1;}
+    else{const e=ease01((q-w-a)/r);out.twist=end*(1-e);out.weight=1-e;}
+    out.lean=(pf.kind==='heavy'?.16:.10)*out.weight+(pf.air?.07:0);
+  }else if(st.act==='dash'){
+    const e=Math.sin(Math.PI*clamp(q/.38,0,1));
+    out.lean=.30*e;out.twist=.08*Math.sin(q/.38*Math.PI*2)*e;out.weight=e;
+  }else if(st.act==='guard'){
+    out.lean=.055;out.twist=-.12+.10*st.guardHit;out.weight=1;
+  }else if(st.act==='jump'){
+    const e=ease01(q/.14);out.lean=.08*e;out.weight=e;
+  }
+  return out;
 }
 
 // ---------- per-frame simulation ----------
@@ -562,7 +590,10 @@ function simulate(cr,dt){
       if(q>.35&&!st._struck){st._struck=true;onRoar(st);}
       if(q>.95){st.act=null;st._struck=false;}
     }else if(st.act==='dash'){
+      st.crouch=Math.max(st.crouch,.34*Math.sin(Math.PI*clamp(q/.38,0,1)));
       if(q>.38)st.act=null;
+    }else if(st.act==='guard'){
+      st.crouch=Math.max(st.crouch,.09+.06*st.guardHit);
     }else if(st.act==='jump'){
       st.crouch=Math.min(q/.14,1);                               // squash before…
       if(q>=.14){st.act=null;if(st.jumpY<=0)st.jumpVy=3.4;}      // …launch
@@ -582,7 +613,7 @@ function simulate(cr,dt){
   if(st.jumpVy!==0||st.jumpY>0){                                 // ballistic arc
     const grav=9.5*(st.jumpVy<0?1+.05*Math.min(massOf(st),8):1); // heavy falls hard
     st.jumpVy-=grav*dt; st.jumpY+=st.jumpVy*dt;
-    if(st.jumpY<=0){st.jumpY=0;st.jumpVy=0;st.crouch=Math.max(st.crouch,.8);
+    if(st.jumpY<=0){st.jumpY=0;st.jumpVy=0;st.crouch=Math.max(st.crouch,.8);st.land=1;
       if(st._slam){st._slam=false;onSlam(st);}
       if(st._leapLand){st._leapLand=false;onLeapLand(st,st._leapDmg);st._leapDmg=0;}}
   }
@@ -601,7 +632,7 @@ function simulate(cr,dt){
   // surges rhythmically at full sprint, and every creature brakes into sharp
   // turns — constant cruise speed is what made pursuit read as robotic
   st.gait+=(st.urge-st.gait)*(1-Math.exp(-2.5*dt));
-  const spdMul=(st.isPlayer?(game.potion? .4:1):1)*(
+  const spdMul=(st.isPlayer?(game.potion?.4:(st.act==='guard'?.38:1)):1)*(
     st.isPlayer?1:(.42+.9*st.gait)
     *(1+(st.gait>.85?.3*Math.max(0,Math.sin(t*2.2+st.breathPhase)):0))
     /(1+Math.abs(st.yawRate)*.22));
@@ -635,6 +666,16 @@ function simulate(cr,dt){
   st.leader[1]=groundY+st.air*(1.55-groundY)+st.jumpY;
   const speed=len(st.vel);
   st.speedN=clamp(speed/P.speed,0,1);
+  // Speed, lean and axial twist have their own response rates: limbs answer
+  // quickly, the armored trunk carries a fraction of a beat of momentum.
+  const hm=hunterActionMotion(st);
+  const motionT=st.dead?0:st.speedN*(st.act==='strike'?.45:1);
+  st.motionN+=(motionT-st.motionN)*(1-Math.exp(-(motionT>st.motionN?9:6)*dt));
+  const gaitTwist=P.humanoid?Math.sin(st.phase*Math.PI*2)*.16*st.motionN*(1-hm.weight):0;
+  const leanT=P.humanoid?(hm.lean+.045*st.motionN*(1-hm.weight)):0;
+  st.lean+=(leanT-st.lean)*(1-Math.exp(-10*dt));
+  st.twist+=(gaitTwist+hm.twist-st.twist)*(1-Math.exp(-12*dt));
+  st.land*=Math.exp(-8*dt);st.guardHit*=Math.exp(-9*dt);
   const tucked=st.air>.5||st.jumpY>.14;
   let sup=0,supW=0;
   if(!tucked)for(const leg of st.legs){
@@ -675,10 +716,12 @@ function simulate(cr,dt){
   st.wOpen+=(wTgt-st.wOpen)*Math.min(1,dt*3);
   if(st.wOpen>.02)st.flap+=dt*Math.PI*2*(1.5+2.1*st.air);
   const bodySide=nrm(cross(V(0,1,0),st.fw));
-  const bobY=st.bobY
+  const humanStep=P.humanoid?Math.cos(st.phase*Math.PI*4)*P.bob*.30*st.motionN-st.land*.022:0;
+  const bobY=st.bobY+humanStep
             +(st.dead?0:Math.sin(st.breathPhase)*P.chestH*.012*(1+st.rest*1.6)*(1+1.8*st.pant))
             +st.air*Math.sin(st.flap)*P.chestH*.08;                  // wingbeat heave
   st.chest=add(chestS,scl(bodySide,st.support*P.chestR*st.radScale*.16));
+  if(P.humanoid)st.chest=add(st.chest,scl(st.fw,st.lean*(P.chestH-P.hipH)*.34));
   st.chest[1]+=bobY;
 
   // --- spine: hip trails the chest like a rope (bends through turns) ---
@@ -817,16 +860,39 @@ function buildLegs(cr,n){
 }
 
 function hunterSwordAxis(st,up,side,fw){
-  const pf=st.act==='strike'?st.actProf:null;
-  // rest carry: tip down beside the right leg, slight forward so it clears the thigh
-  if(!pf)return nrm(add(scl(up,-.90),add(scl(fw,.25),scl(side,.22))));
-  const q=st.actT, p=clamp((q-pf.wind)/pf.active,0,1);
-  if(pf.kind==='heavy'){
-    if(q<pf.wind)return nrm(add(scl(up,.95),add(scl(fw,-.30),scl(side,.12))));
-    return nrm(add(scl(up,.86-.66*p),add(scl(fw,.48+.42*p),scl(side,.12))));
+  const gait=Math.sin(st.phase*Math.PI*2)*st.motionN;
+  // Carry is alive but restrained: the long blade lags the walking hand.
+  const carry=nrm(add(scl(up,-.90),add(scl(fw,.25-.045*gait),scl(side,.22+.035*gait))));
+  if(st.act==='guard')
+    return nrm(add(scl(up,.74),add(scl(side,-.54),scl(fw,.30))));
+  if(st.act==='dash'){
+    const e=Math.sin(Math.PI*clamp(st.actT/.38,0,1));
+    return nrm(mix(carry,add(scl(fw,-.55),add(scl(side,.48),scl(up,-.52))),e));
   }
-  const sweep=(pf.kind==='backhand'?1:-1)*(p*2-1)*Math.PI/3;
-  return nrm(add(scl(fw,Math.cos(sweep)),add(scl(side,Math.sin(sweep)),scl(up,.08))));
+  const pf=st.act==='strike'?st.actProf:null;
+  if(!pf){
+    if(st.jumpY>.08)return nrm(add(scl(fw,-.34),add(scl(side,.50),scl(up,-.72))));
+    return carry;
+  }
+  const q=st.actT,w=pf.wind,a=pf.active,r=pf.rec;
+  let wind,end;
+  if(pf.kind==='heavy'){
+    wind=nrm(add(scl(up,.94),add(scl(fw,-.30),scl(side,.10))));
+    end=nrm(add(scl(fw,.73),add(scl(up,pf.air?-.78:-.62),scl(side,.10))));
+  }else if(pf.kind==='backhand'){
+    wind=nrm(add(scl(side,-.88),add(scl(up,.28),scl(fw,-.16))));
+    end=nrm(add(scl(fw,.70),add(scl(side,.66),scl(up,pf.air?-.34:-.12))));
+  }else{
+    wind=nrm(add(scl(side,.86),add(scl(up,.34),scl(fw,-.22))));
+    end=nrm(add(scl(fw,.72),add(scl(side,-.64),scl(up,pf.air?-.38:-.18))));
+  }
+  if(q<w)return nrm(mix(carry,wind,ease01(q/w)));
+  if(q<w+a){
+    const p=ease01((q-w)/a);
+    // A small lift through the middle draws a curved cut instead of a chord.
+    return nrm(add(mix(wind,end,p),scl(up,Math.sin(Math.PI*p)*(pf.kind==='heavy'?.10:.18))));
+  }
+  return nrm(mix(end,carry,ease01((q-w-a)/r)));
 }
 
 // ---------- Phase II/III: emit the tube list (per creature, part-tagged) ----------
@@ -836,6 +902,12 @@ function buildSkeleton(cr,dt){
   const up=V(0,1,0), rs=st.radScale, ls=st.legScale;
   const rc=Math.cos(st.roll), rr=Math.sin(st.roll);
   const bs=add(scl(side,rc),scl(up,rr)), bu=add(scl(up,rc),scl(side,-rr));
+  // Pelvis follows travel; ribcage counter-rotates around it. This second
+  // frame gives an upright human a real waist instead of rotating as one log.
+  const tc=Math.cos(P.humanoid?st.twist:0),tr=Math.sin(P.humanoid?st.twist:0);
+  const hfw=nrm(add(scl(fw,tc),scl(side,tr)));
+  const hside=nrm(add(scl(side,tc),scl(fw,-tr)));
+  const hbs=add(scl(hside,rc),scl(up,rr)), hbu=add(scl(up,rc),scl(hside,-rr));
   const soft=[],hard=[];
   const S=(a,b,r1,r2,m,list,tag)=>list.push([a, (a===b?add(b,V(0,1e-4,0)):b), r1,r2,m,tag||'body']);
 
@@ -1092,60 +1164,92 @@ function buildSkeleton(cr,dt){
     const wt=clamp(WTIER|0,0,4), at=clamp(ATIER|0,0,3); /*FORGE*/
     const armScale=st.scale, upper=.31*armScale, fore=.27*armScale, armLen=upper+fore;
     const shoulderHalf=P.chestR*rs*1.34;
-    const shR=add(st.chest,add(scl(bs,shoulderHalf),add(scl(bu,P.chestR*rs*.08),scl(fw,P.chestR*rs*.04))));
-    const shL=add(st.chest,add(scl(bs,-shoulderHalf),add(scl(bu,P.chestR*rs*.08),scl(fw,P.chestR*rs*.04))));
-    const clavR=add(st.chest,add(scl(bs,shoulderHalf*.40),scl(bu,P.chestR*rs*.12)));
-    const clavL=add(st.chest,add(scl(bs,-shoulderHalf*.40),scl(bu,P.chestR*rs*.12)));
+    const stride=Math.sin(st.phase*Math.PI*2)*st.motionN;
+    const shLift=.012*stride;
+    const shR=add(st.chest,add(scl(hbs,shoulderHalf),add(scl(hbu,P.chestR*rs*.08+shLift),scl(hfw,P.chestR*rs*.04))));
+    const shL=add(st.chest,add(scl(hbs,-shoulderHalf),add(scl(hbu,P.chestR*rs*.08-shLift),scl(hfw,P.chestR*rs*.04))));
+    const clavR=add(st.chest,add(scl(hbs,shoulderHalf*.40),scl(hbu,P.chestR*rs*.12)));
+    const clavL=add(st.chest,add(scl(hbs,-shoulderHalf*.40),scl(hbu,P.chestR*rs*.12)));
     S(clavR,shR,P.chestR*rs*.33,P.chestR*rs*.37,2,soft,'shoulder');
     S(clavL,shL,P.chestR*rs*.33,P.chestR*rs*.37,2,soft,'shoulder');
 
     // Dark gambeson panel and belt establish chest/waist/pelvis as three
     // readable masses even when the player is only a few dozen pixels tall.
-    const vest0=add(st.chest,scl(fw,P.chestR*rs*.64));
-    const vest1=add(mix(st.chest,st.hip,.62),scl(fw,P.midR*rs*.52));
+    const vest0=add(st.chest,scl(hfw,P.chestR*rs*.64));
+    const vest1=add(mix(st.chest,st.hip,.62),scl(hfw,P.midR*rs*.52));
     S(vest0,vest1,P.chestR*rs*.58,P.midR*rs*.49,3,soft,'gambeson');
     const pelvisL=add(st.hip,scl(bs,-P.hipR*rs*.58));
     const pelvisR=add(st.hip,scl(bs,P.hipR*rs*.58));
     S(pelvisL,pelvisR,P.hipR*rs*.52,P.hipR*rs*.52,2,soft,'pelvis');
-    const belt=add(mix(st.chest,st.hip,.78),scl(fw,P.hipR*rs*.56));
+    const belt=add(mix(st.chest,st.hip,.78),scl(hfw,P.hipR*rs*.56));
     S(add(belt,scl(bs,-P.hipR*rs*.72)),add(belt,scl(bs,P.hipR*rs*.72)),.025,.025,3,hard,'belt');
 
     // Cap-shaped pauldrons follow the shoulder line instead of sitting on it
     // as detached balls. Forge tiers grow the same underlying silhouette.
     for(const s of[1,-1]){
       const sh=s>0?shR:shL, padS=at>=1?1.14:1; /*FORGE*/
-      const inner=add(sh,add(scl(bs,-s*.040*padS),scl(bu,.030*padS)));
-      const outer=add(sh,add(scl(bs,s*.055*padS),scl(bu,.005)));
+      const inner=add(sh,add(scl(hbs,-s*.040*padS),scl(hbu,.030*padS)));
+      const outer=add(sh,add(scl(hbs,s*.055*padS),scl(hbu,.005)));
       S(inner,outer,.058*padS,.041*padS,5,hard,'pauldron');
     }
     if(at>=1){ /*FORGE — breastplate only after first armor upgrade */
-      const bp0=add(st.chest,add(scl(fw,P.chestR*rs*.72),scl(bu,P.chestR*rs*.04)));
-      const bp1=add(mix(st.chest,st.hip,.45),scl(fw,P.midR*rs*.45));
+      const bp0=add(st.chest,add(scl(hfw,P.chestR*rs*.72),scl(hbu,P.chestR*rs*.04)));
+      const bp1=add(mix(st.chest,st.hip,.45),scl(hfw,P.midR*rs*.45));
       const bpS=at>=3?1.15:1;
       S(bp0,bp1,P.chestR*rs*.50*bpS,P.midR*rs*.40*bpS,5,hard,'breastplate');
     } /*FORGE*/
-    let rTgt,lTgt;
-    if(st.act==='strike'){
-      const heavy=st.actProf.kind==='heavy', q=st.actT;
-      const p=clamp((q-st.actProf.wind)/st.actProf.active,0,1);
-      rTgt=add(shR,add(scl(fw,heavy?.04:.18),add(scl(bs,.12),
-        scl(bu,heavy?(-.04+.24*p):-armLen*.28))));
-      lTgt=add(shL,add(scl(fw,heavy?.18:.12),add(scl(bs,-.11),scl(bu,heavy?-armLen*.18:-armLen*.48))));
+    // Walking arms counter-swing the legs. Sword mass damps the weapon side;
+    // the free hand travels farther and opens during jump/landing balance.
+    let carryR=add(shR,add(scl(hfw,.07-.055*stride),add(scl(hbs,.12),scl(hbu,-armLen*(.72-.025*Math.abs(stride))))));
+    let carryL=add(shL,add(scl(hfw,.12+.145*stride),add(scl(hbs,-.13),scl(hbu,-armLen*(.60-.055*Math.abs(stride))))));
+    const airN=clamp(st.jumpY/.32,0,1);
+    if(airN>0){
+      carryR=mix(carryR,add(shR,add(scl(hfw,-.10),add(scl(hbs,.16),scl(hbu,-.12)))),airN);
+      carryL=mix(carryL,add(shL,add(scl(hfw,.17),add(scl(hbs,-.23),scl(hbu,.015)))),airN);
+    }
+    if(st.land>0){
+      carryR=mix(carryR,add(shR,add(scl(hfw,.18),add(scl(hbs,.18),scl(hbu,-.18)))),st.land);
+      carryL=mix(carryL,add(shL,add(scl(hfw,.20),add(scl(hbs,-.20),scl(hbu,-.16)))),st.land);
+    }
+    let rTgt=carryR,lTgt=carryL;
+    if(st.act==='guard'){
+      rTgt=add(st.chest,add(scl(hfw,.34),add(scl(hbs,.085),scl(hbu,.015))));
+      lTgt=add(st.chest,add(scl(hfw,.31),add(scl(hbs,-.075),scl(hbu,-.035))));
     }else if(st.act==='dash'){
-      rTgt=add(shR,add(scl(fw,-.08),add(scl(bs,.12),scl(bu,-.16))));
-      lTgt=add(shL,add(scl(fw,.06),add(scl(bs,-.10),scl(bu,-.18))));
-    }else{
-      // Asymmetric ready stance: sword hand at the hip, free hand balancing
-      // forward. It stays relaxed without collapsing into a vertical T-pose.
-      rTgt=add(shR,add(scl(fw,.07),add(scl(bs,.12),scl(bu,-armLen*.72))));
-      lTgt=add(shL,add(scl(fw,.12),add(scl(bs,-.13),scl(bu,-armLen*.60))));
+      const e=Math.sin(Math.PI*clamp(st.actT/.38,0,1));
+      rTgt=mix(carryR,add(shR,add(scl(hfw,-.16),add(scl(hbs,.15),scl(hbu,-.12)))),e);
+      lTgt=mix(carryL,add(shL,add(scl(hfw,-.04),add(scl(hbs,-.17),scl(hbu,-.16)))),e);
+    }else if(st.act==='strike'){
+      const pf=st.actProf,q=st.actT,w=pf.wind,a=pf.active,r=pf.rec;
+      let wr,wl,er,el;
+      if(pf.kind==='heavy'){
+        wr=add(head,add(scl(hbu,.17),add(scl(hbs,.09),scl(hfw,-.08))));
+        wl=add(wr,add(scl(hbs,-.11),scl(hbu,-.045)));
+        er=add(st.chest,add(scl(hfw,.30),add(scl(hbs,.04),scl(hbu,-.24))));
+        el=add(er,add(scl(hfw,-.08),add(scl(hbs,-.10),scl(hbu,.055))));
+      }else if(pf.kind==='backhand'){
+        wr=add(st.chest,add(scl(hbs,-.20),add(scl(hbu,.035),scl(hfw,-.035))));
+        wl=add(shL,add(scl(hfw,-.06),add(scl(hbs,-.15),scl(hbu,-.19))));
+        er=add(st.chest,add(scl(hfw,.27),add(scl(hbs,.24),scl(hbu,-.055))));
+        el=add(shL,add(scl(hfw,.15),add(scl(hbs,-.19),scl(hbu,-.14))));
+      }else{
+        wr=add(st.chest,add(scl(hbs,.24),add(scl(hbu,.075),scl(hfw,-.055))));
+        wl=add(shL,add(scl(hfw,-.05),add(scl(hbs,-.17),scl(hbu,-.18))));
+        er=add(st.chest,add(scl(hfw,.28),add(scl(hbs,-.19),scl(hbu,-.045))));
+        el=add(shL,add(scl(hfw,.16),add(scl(hbs,-.20),scl(hbu,-.13))));
+      }
+      if(pf.air){er=add(er,scl(hbu,-.10));el=add(el,scl(hbu,.07));}
+      if(q<w){const e=ease01(q/w);rTgt=mix(carryR,wr,e);lTgt=mix(carryL,wl,e);}
+      else if(q<w+a){const e=ease01((q-w)/a);rTgt=mix(wr,er,e);lTgt=mix(wl,el,e);}
+      else{const e=ease01((q-w-a)/r);rTgt=mix(er,carryR,e);lTgt=mix(el,carryL,e);}
     }
     // pole = direction (not world point): sword elbow back+out so the forearm aims the grip
-    const poleR=add(scl(fw,-.55),add(scl(bs,.40),scl(bu,.20)));
-    const poleL=add(scl(fw,-.65),add(scl(bs,-.25),scl(bu,.10)));
+    const poleR=add(scl(hfw,-.55),add(scl(hbs,.40),scl(hbu,.20)));
+    const poleL=add(scl(hfw,-.65),add(scl(hbs,-.25),scl(hbu,.10)));
     const armR=solve2(shR,rTgt,upper,fore,poleR);
     const armL=solve2(shL,lTgt,upper,fore,poleL);
     const rightHand=armR.foot;
+    st.handR=[...rightHand];st.handL=[...armL.foot];
     S(shR,armR.knee,.052,.039,2,soft,'armR'); S(armR.knee,rightHand,.040,.030,2,soft,'armR');
     S(shL,armL.knee,.052,.039,2,soft,'armL'); S(armL.knee,armL.foot,.040,.030,2,soft,'armL');
     S(armR.knee,armR.knee,.043,.043,2,soft,'armR');
@@ -1163,17 +1267,17 @@ function buildSkeleton(cr,dt){
     if(at>=2){ /*FORGE*/
       const crest=add(head,add(scl(hu,P.headR*rs*.95),scl(hf,-.02))); /*FORGE*/
       S(crest,add(crest,add(scl(hu,.10),scl(hf,-.02))),P.headR*rs*.12,.004,3,hard,'armor'); /*FORGE*/
-      const skirt=add(st.hip,add(scl(fw,P.hipR*rs*.58),scl(bu,-P.hipR*rs*.28))); /*FORGE*/
-      for(const s of[1,-1]){const t0=add(skirt,scl(bs,s*P.hipR*rs*.62)); /*FORGE*/
-        S(t0,add(t0,scl(bu,-.11)),.043,.026,5,hard,'tasset');} /*FORGE*/
+      const skirt=add(st.hip,add(scl(hfw,P.hipR*rs*.58),scl(hbu,-P.hipR*rs*.28))); /*FORGE*/
+      for(const s of[1,-1]){const t0=add(skirt,scl(hbs,s*P.hipR*rs*.62)); /*FORGE*/
+        S(t0,add(t0,scl(hbu,-.11)),.043,.026,5,hard,'tasset');} /*FORGE*/
     } /*FORGE*/
     if(at>=3){ /*FORGE*/
-      const back=add(st.chest,add(scl(fw,-P.chestR*rs*.70),scl(bu,.015))); /*FORGE*/
-      S(back,add(back,scl(fw,-.11)),.075,.042,6,soft,'armor'); /*FORGE*/
+      const back=add(st.chest,add(scl(hfw,-P.chestR*rs*.70),scl(hbu,.015))); /*FORGE*/
+      S(back,add(back,scl(hfw,-.11)),.075,.042,6,soft,'armor'); /*FORGE*/
     } /*FORGE*/
 
     // —— real sword in the hand: pommel → grip (through fist) → guard → blade ——
-    const axis=hunterSwordAxis(st,bu,side,fw);
+    const axis=hunterSwordAxis(st,hbu,hbs,hfw);
     const bladeLen=.92*armScale*(1+.06*wt); /*FORGE*/
     const guardN=nrm(cross(up,axis)); // crossguard left/right
     // hilt layout along the blade axis, centered on the fist
@@ -1200,11 +1304,11 @@ function buildSkeleton(cr,dt){
       S(gn,add(gn,scl(axis,.07)),.012,.004,3,hard,'sword'); /*FORGE*/
     } /*FORGE*/
     if(wt===2){ /*FORGE*/
-      const tip=nrm(add(axis,add(scl(side,.30),scl(bu,.08)))); /*FORGE*/
+      const tip=nrm(add(axis,add(scl(hbs,.30),scl(hbu,.08)))); /*FORGE*/
       S(st.bladeB,add(st.bladeB,scl(tip,.12*armScale)),.018,.004,7,hard,'sword'); /*FORGE*/
     } /*FORGE*/
     if(wt>=3){ /*FORGE*/
-      const edge=add(scl(bu,.022),scl(guardN,.008)); /*FORGE*/
+      const edge=add(scl(hbu,.022),scl(guardN,.008)); /*FORGE*/
       S(add(st.bladeA,edge),add(st.bladeB,edge),.008,.003,6,hard,'sword'); /*FORGE*/
       for(const s of[-1,1]){ /*FORGE*/
         const pr=add(guardC,scl(guardN,s*.07)); /*FORGE*/
@@ -1248,8 +1352,15 @@ function buildSkeleton(cr,dt){
         // Tall leather boots keep the lower-leg taper legible against the
         // ground; upgraded plate sits over this same underlying form.
         S(mix(knee,ank,.52),ank,lr*1.10,lr*.82,3,soft,'boot');
-        const toe=add(leg.foot,scl(fw,fs*.96));
-        const heel=add(leg.foot,scl(fw,-fs*.38));
+        let toe=add(leg.foot,scl(fw,fs*.96));
+        let heel=add(leg.foot,scl(fw,-fs*.38));
+        if(leg.stepping){
+          // Heel leads toe-off, toe leads the landing. The planted endpoint
+          // remains untouched, so foot roll cannot introduce skating.
+          const p=clamp(leg.t,0,1), pitch=(.5-p)*2*Math.sin(Math.PI*p);
+          toe=add(toe,V(0,fs*.18*pitch,0));
+          heel=add(heel,V(0,-fs*.07*pitch,0));
+        }
         S(heel,toe,lr*1.04,lr*.72,3,hard,'boot');
         const leatherKnee=add(knee,add(scl(fw,lr*.70),scl(bu,lr*.08)));
         S(add(leatherKnee,scl(bs,-leg.s*lr*.30)),add(leatherKnee,scl(bs,leg.s*lr*.30)),lr*.58,lr*.50,3,soft,'kneepad');
@@ -1978,7 +2089,7 @@ function startPlayerStrike(n,carry){
   if(cost&&!spendStamina(cost))return false;
   const prof=Object.assign({},COMBO[n]);
   const aim=hunterAim();
-  prof.dir=aim.dir; prof.aim=aim.point;
+  prof.dir=aim.dir; prof.aim=aim.point; prof.air=player.jumpY>.08;
   player._aimPoint=aim.point; player._dashCarry=carry||V();
   startStrike(player,prof);
   return true;
@@ -2025,6 +2136,13 @@ function playerDash(){
   player.act='dash';player.actT=0;
   noiseHit(.12,.25,2100); // whoosh
 }
+function playerGuard(on){
+  if(!on){if(player.act==='guard'){player.act=null;player.actT=0;}return;}
+  if(game.board||player.dead||game.carving||game.over||game.failed)return;
+  if(player.act==='guard')return;
+  if(player.act||player.jumpY>.18)return;
+  cancelPotion();player.restOn=false;player.act='guard';player.actT=0;player._struck=false;
+}
 function startAction(cr,n){
   if(cr.dead)return;
   if(n==='rest'){cr.restOn=!cr.restOn;if(cr.restOn)cr.target=[cr.leader[0],0,cr.leader[2]];return;}
@@ -2054,7 +2172,7 @@ function startAction(cr,n){
   const b=i=>padButton(p,i), edge=i=>b(i)&&!padPrev[i];
   // pad owns 'q' only while IT holds it — never wipe a keyboard-held potion
   const dropQ=()=>{if(padPrev.qHeld){keys.delete('q');padPrev.qHeld=false;}};
-  if(!p){dropQ();for(let i=0;i<17;i++)padPrev[i]=false;return [0,0];}
+  if(!p){dropQ();if(padPrev[6]&&!keys.has('k'))playerGuard(false);for(let i=0;i<17;i++)padPrev[i]=false;return [0,0];}
   const ax=+p.axes[0]||0,ay=+p.axes[1]||0,rx=+p.axes[2]||0,ry=+p.axes[3]||0;
   if(!game.board&&!player.dead){
     if(Math.hypot(rx,ry)>.22){cam.az-=rx*.055;cam.el=clamp(cam.el+ry*.04,.10,1.25);}
@@ -2063,6 +2181,7 @@ function startAction(cr,n){
     if(b(3)){keys.add('q');padPrev.qHeld=true;}else dropQ();
     if(edge(5))tryCarve();
     if(edge(4)){cam.lock=!cam.lock;log(cam.lock?'LOCK-ON':'LOCK OFF',true);}
+    if(b(6))playerGuard(true);else if(padPrev[6]&&!keys.has('k'))playerGuard(false);
   }else dropQ();
   for(let i=0;i<17;i++)padPrev[i]=b(i);
   const L=Math.hypot(ax,ay);return L>.22?[ax,ay]:[0,0];
@@ -2075,6 +2194,7 @@ addEventListener('keydown',e=>{
   if(k==='space'){e.preventDefault();if(!game.carving&&!game.board)startAction(player,'jump');}
   else if(k==='j')playerAttack();
   else if(k==='shift')playerDash();
+  else if(k==='k')playerGuard(true);
   else if(k==='q')startPotion();
   else if(k==='e')tryCarve();
   else if(k==='m'){muted=!muted;log(muted?'MUTED':'SOUND ON');}
@@ -2083,7 +2203,7 @@ addEventListener('keydown',e=>{
   else if(k==='r'&&(game.failed||game.over)){if(typeof location!=='undefined')location.reload();}
   else if(k==='b'&&(game.failed||game.over)){if(typeof location!=='undefined')location.href=location.pathname;} /*SAGA*/
 });
-addEventListener('keyup',e=>keys.delete(e.key===' '?'space':e.key.toLowerCase()));
+addEventListener('keyup',e=>{const k=e.key===' '?'space':e.key.toLowerCase();keys.delete(k);if(k==='k')playerGuard(false);});
 function updInput(dt){
   if(player.stamRegenT>0)player.stamRegenT=Math.max(0,player.stamRegenT-dt);
   else if(player.stam<player.stamMax)
@@ -2105,6 +2225,7 @@ const pointers=new Map();
 let dragDist=0,pinch0=0,wasPinch=false;
 canvas.addEventListener('pointerdown',e=>{
   audioUnlock();
+  if(e.button===2){e.preventDefault();playerGuard(true);return;}
   canvas.setPointerCapture(e.pointerId);
   /*PAD*/ if(e.pointerType==='touch'&&e.clientX<innerWidth*.4){touchPad={id:e.pointerId,ox:e.clientX,oy:e.clientY};stickAt(e.clientX,e.clientY);return;}
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -2126,13 +2247,15 @@ canvas.addEventListener('pointermove',e=>{
   if(dragDist>6){cam.az-=dx*.0055;cam.el=clamp(cam.el+dy*.004,.10,1.25);}
 });
 canvas.addEventListener('pointerup',e=>{
+  if(e.button===2){playerGuard(false);return;}
   /*PAD*/ if(touchPad&&touchPad.id===e.pointerId){clearStick();return;}
   pointers.delete(e.pointerId);
   if(pointers.size===0){const wp=wasPinch;wasPinch=false;if(wp)return;}
   else return;
   if(dragDist<=6)playerAttack();
 });
-canvas.addEventListener('pointercancel',e=>{ /*PAD*/ if(touchPad&&touchPad.id===e.pointerId){clearStick();return;} pointers.delete(e.pointerId);});
+canvas.addEventListener('pointercancel',e=>{if(e.button===2)playerGuard(false); /*PAD*/ if(touchPad&&touchPad.id===e.pointerId){clearStick();return;} pointers.delete(e.pointerId);});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('wheel',e=>{
   e.preventDefault();
   cam.dist=clamp(cam.dist*Math.exp(e.deltaY*.0011),3.2,15);
@@ -2440,6 +2563,7 @@ game.partMax={tail:game.parts.tail,legs:game.parts.legs,head:game.parts.head,
     if(up)b.addEventListener('touchend',e=>{e.preventDefault();up();},{passive:false});
     if(up)b.addEventListener('touchcancel',up);box.appendChild(b);};
   add('DASH',playerDash);add('JUMP',()=>startAction(player,'jump'));
+  add('GUARD',()=>playerGuard(true),()=>playerGuard(false));
   add('POTION',()=>{keys.add('q');startPotion();},()=>keys.delete('q'));
   add('CARVE',tryCarve);box.style.display='flex';document.body.appendChild(box);
 }
@@ -2680,14 +2804,34 @@ function hitBoss(amt,tag,pos){
 function hurtPlayer(amt,from){
   if(player.iFrames>0||player.dead||game.over||game.failed)return;
   cancelPotion();
+  let blocked=false;
+  if(from&&player.act==='guard'){
+    const incoming=nrm(sub(from,player.leader));incoming[1]=0;
+    if(dot(player.fw,incoming)>.12){
+      const perfect=player.actT<=.18,cost=perfect?7:clamp(Math.round(amt*.55),10,24);
+      if(spendStamina(cost)){
+        player.guardHit=1;sfx.tink();game.hitStop=Math.max(game.hitStop,perfect?.095:.045);
+        cam.shake=Math.max(cam.shake,perfect?.13:.08);
+        if(perfect){
+          player.iFrames=.14;dmgNum(add(player.chest,V(0,.25,0)),'PARRY','tink');
+          log('PERFECT GUARD',true);return;
+        }
+        blocked=true;amt=Math.max(1,amt*.35);
+      }else{
+        player.act=null;player.guardHit=1;log('GUARD BROKEN');
+      }
+    }
+  }
   amt=Math.max(1,Math.round(amt*(1-ARM[SG.aTier].def))); /*SAGA — armor holds*/
-  player.hp-=amt; flash(); sfx.hurt(); cam.shake=Math.max(cam.shake,.35);
-  game.hitStop=Math.max(game.hitStop,.08);
-  dmgNum(add(player.chest,V(0,.3,0)),amt,'hurt');
+  player.hp-=amt;
+  if(blocked){dmgNum(add(player.chest,V(0,.3,0)),amt,'tink');cam.shake=Math.max(cam.shake,.12);}
+  else{flash();sfx.hurt();cam.shake=Math.max(cam.shake,.35);game.hitStop=Math.max(game.hitStop,.08);
+    dmgNum(add(player.chest,V(0,.3,0)),amt,'hurt');}
   if(from){const kb=nrm(sub(player.leader,from));kb[1]=0;
-    player.imp=add(player.imp,scl(kb,4.5*clamp(.8+.07*massOf(boss),.85,1.45))); // tonnage hits harder
-    kickChest(player,kb,clamp(.055+amt/player.maxHp*.20,.06,.16));}
-  player.iFrames=.5;
+    const guardK=blocked?.18:1;
+    player.imp=add(player.imp,scl(kb,4.5*guardK*clamp(.8+.07*massOf(boss),.85,1.45))); // tonnage hits harder
+    kickChest(player,kb,clamp(.055+amt/player.maxHp*.20,.06,.16)*guardK);}
+  player.iFrames=blocked?.22:.5;
   if(player.hp<=0)faint();
 }
 function onSlam(cr){
