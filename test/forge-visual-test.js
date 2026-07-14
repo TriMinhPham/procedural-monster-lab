@@ -44,6 +44,21 @@ vm.runInContext(`
 const snap=combo=>vm.runInContext(`WTIER=${combo[0]};ATIER=${combo[1]};__driveForge(60);__forgeSnapshot();`,ctx);
 const records={};
 const base=snap([0,0]); records['0/0']=base;
+const anatomy=vm.runInContext(`(()=>{
+  const P=player.P;
+  const top=P.chestH+P.neckUp+P.chestR*.75+P.neckLen+P.headR;
+  return {
+    heads:top/(P.headR*2),
+    legShare:(P.lu+P.ll)/top,
+    shoulderHeads:(P.chestR*1.34*2)/(P.headR*2),
+  };
+})()`,ctx);
+if(anatomy.heads<7||anatomy.heads>8.25)
+  throw new Error(`hunter proportion drift: ${anatomy.heads.toFixed(2)} heads`);
+if(anatomy.legShare<.48||anatomy.legShare>.57)
+  throw new Error(`hunter leg proportion drift: ${(anatomy.legShare*100).toFixed(1)}%`);
+if(anatomy.shoulderHeads<1.8)
+  throw new Error(`hunter shoulder line too narrow: ${anatomy.shoulderHeads.toFixed(2)} heads`);
 for(let w=0;w<=4;w++)for(let a=0;a<=3;a++){
   const s=snap([w,a]); records[`${w}/${a}`]=s;
 }

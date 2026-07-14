@@ -239,15 +239,16 @@ const PRESETS={
     muscle:true, brow:true, claws:3, plates:true,
     dyn:[1.5,.8,.7], pal:'fossil', k:.06
   },
-  hunter:{ // armored humanoid: upright plantigrade knight (hips under torso, not mid-body)
-    pairs:1, mode:'zigzag', soloU:.94, humanoid:true,
-    bodyLen:.20, chestH:1.08, hipH:.96, chestR:.17, midR:.112, hipR:.155,
-    neckLen:.12, neckUp:.06, headR:.130, headLen:.14, snout:.05,
-    lu:.44, ll:.42, fs:.11, legR:.048, stance:[.13], lead:[.03],
-    stepThresh:.22, stepDur:.15, stepH:.10, speed:2.15, stride:.52,
-    undulate:0, tailN:0, tailLen:0, bob:.016, post:.98,
+  hunter:{ // athletic adult hunter (≈7.5 heads). scale .9 in play.
+    // Upright spine, broad shoulder line, narrow waist and plantigrade legs.
+    pairs:1, mode:'zigzag', soloU:1, humanoid:true,
+    bodyLen:.17, chestH:1.28, hipH:.91, chestR:.15, midR:.112, hipR:.135,
+    neckLen:.09, neckUp:.035, headR:.105, headLen:.11, snout:.04,
+    lu:.44, ll:.42, fs:.12, legR:.052, stance:[.15], lead:[.025],
+    stepThresh:.20, stepDur:.14, stepH:.09, speed:2.15, stride:.52,
+    undulate:0, tailN:0, tailLen:0, bob:.012, post:.98,
     ears:false, antennae:false, palps:false, spikesDefault:false,
-    dyn:[2.4,.7,.9], pal:'ember', k:.04
+    dyn:[2.4,.7,.9], pal:'ember', k:.035
   },
   wyvern:{ // bird group: biped + wings, flies to far calls
     pairs:1, mode:'zigzag', soloU:.75,
@@ -691,7 +692,9 @@ function simulate(cr,dt){
   // when the hip rides higher/lower, the horizontal span shortens to compensate
   const hipY=st.chest[1]+(P.hipH-P.chestH)*st.hMul*(1-st.air)+st.air*.16;
   const dy=hipY-st.chest[1];
-  const span=Math.sqrt(Math.max(P.bodyLen*P.bodyLen-dy*dy,P.bodyLen*P.bodyLen*.16));
+  // humanoid: allow a near-vertical spine (tiny plan-view span); animals keep the wider floor
+  const spanFloor=P.bodyLen*P.bodyLen*(P.humanoid?.04:.16);
+  const span=Math.sqrt(Math.max(P.bodyLen*P.bodyLen-dy*dy,spanFloor));
   const hipXZ=add([st.chest[0],0,st.chest[2]],scl(nrm(hv),span));
   st.hip=[hipXZ[0],hipY,hipXZ[2]];
   let fw=sub(st.chest,st.hip); fw[1]=0; fw=nrm(fw);
@@ -815,8 +818,8 @@ function buildLegs(cr,n){
 
 function hunterSwordAxis(st,up,side,fw){
   const pf=st.act==='strike'?st.actProf:null;
-  // at rest the blade rides low at the side — a ready stance, not a lance
-  if(!pf)return nrm(add(scl(fw,.60),add(scl(side,.42),scl(up,-.48))));
+  // rest carry: tip down beside the right leg, slight forward so it clears the thigh
+  if(!pf)return nrm(add(scl(up,-.90),add(scl(fw,.25),scl(side,.22))));
   const q=st.actT, p=clamp((q-pf.wind)/pf.active,0,1);
   if(pf.kind==='heavy'){
     if(q<pf.wind)return nrm(add(scl(up,.95),add(scl(fw,-.30),scl(side,.12))));
@@ -845,42 +848,57 @@ function buildSkeleton(cr,dt){
   const vc=1+.13*st.crouch+.16*st.rest;
   const bend=1-Math.abs(dot(nrm(sub(midPt,st.chest)),nrm(sub(st.hip,midPt))));
   const midRv=P.midR*rs*vc*(1-.4*Math.min(bend*2,.5));
-  const tM=P.humanoid?2:1; // humanoid torso: flat gambeson cloth, not mottled hide
-  S(st.chest,midPt,P.chestR*rs*breathe*vc,midRv,tM,soft);
-  S(midPt,st.hip,midRv,P.hipR*rs*vc,tM,soft);
+  const tM=P.humanoid?2:1; // humanoid torso: cloth, not mottled hide
+  // human: gentle chest→waist→hip (no hip flare). animals keep their bulk curve.
+  if(P.humanoid){
+    const cR=P.chestR*rs*breathe*vc, wR=P.midR*rs*vc, hR=P.hipR*rs*vc;
+    S(st.chest,midPt,cR,wR,tM,soft);
+    S(midPt,st.hip,wR,hR,tM,soft);
+  }else{
+    S(st.chest,midPt,P.chestR*rs*breathe*vc,midRv,tM,soft);
+    S(midPt,st.hip,midRv,P.hipR*rs*vc,tM,soft);
+  }
   if(P.abdomen){ // bug: thorax → fat abdomen
     const tip=add(add(st.hip,scl(fw,-.55)),scl(bu,.07+Math.sin(t*3)*.015));
     S(st.hip,tip,P.hipR*rs*1.5,P.hipR*rs*.55,1,soft);
   }
 
   // neck + head, aimed by the look dynamics
-  const neckBase=add(st.chest,add(scl(fw,P.chestR*.7),scl(bu,P.neckUp)));
+  // humanoid: neck on TOP of chest, head ABOVE (never out the snout plane)
+  const neckBase=P.humanoid
+    ? add(st.chest,scl(bu,P.neckUp+P.chestR*rs*.75))
+    : add(st.chest,add(scl(fw,P.chestR*.7),scl(bu,P.neckUp)));
   let lookDir=nrm(sub(lookS,neckBase));
-  lookDir=nrm(mix(fw,lookDir,.6));
+  lookDir=nrm(mix(fw,lookDir,P.humanoid?.3:.6));
   // clamp pitch, then rebuild xz so |v|=1 with y FIXED — renormalizing all three
   // could push y back to ±1 when xz is tiny (NaN basis in the eye shader)
-  lookDir[1]=clamp(lookDir[1],-.45,.55);
+  lookDir[1]=clamp(lookDir[1],P.humanoid?-.1:-.45,P.humanoid?.18:.55);
   {let h=Math.hypot(lookDir[0],lookDir[2]);
    if(h<1e-4){lookDir[0]=fw[0];lookDir[2]=fw[2];h=Math.hypot(lookDir[0],lookDir[2])||1e-6;}
    const nh=Math.sqrt(1-lookDir[1]*lookDir[1])/h;
    lookDir[0]*=nh;lookDir[2]*=nh;}
-  const head=add(neckBase,scl(lookDir,P.neckLen));
+  const head=P.humanoid
+    ? add(neckBase,scl(bu,P.neckLen))
+    : add(neckBase,scl(lookDir,P.neckLen));
   for(let i=0;i<3;i++)head[i]+=bu[i]*Math.sin(st.phase*Math.PI*4+1.3)*P.bob*.5*st.speedN; // head bob
   const hf=lookDir, hs0=nrm(cross(up,hf)), hu0=nrm(cross(hf,hs0));
   const hc=Math.cos(st.roll*.5), hr=Math.sin(st.roll*.5);
   const hs=nrm(add(scl(hs0,hc),scl(hu0,hr))), hu=nrm(add(scl(hu0,hc),scl(hs0,-hr)));
   st.headPos=head; st.jawTip=add(head,scl(hf,P.headLen*.55)); // combat probe points
   if(P.humanoid){
-    // short thick neck + vertical helm (dome + face plate + dark slit) — a head, not a pill
-    S(neckBase,head,P.chestR*rs*.40,P.headR*rs*.82,2,soft);
-    const dome=add(head,scl(hu,P.headR*rs*.06));
-    S(dome,add(dome,scl(hu,P.headR*rs*.62)),P.headR*rs*1.02,P.headR*rs*.90,5,hard,'helmet');
-    const face=add(head,add(scl(hf,P.headLen*.30),scl(hu,-P.headR*rs*.08)));
-    S(add(face,scl(hs,-P.headR*rs*.50)),add(face,scl(hs,P.headR*rs*.50)),
-      P.headR*rs*.40,P.headR*rs*.34,5,hard,'helmet');
-    const visor=add(head,add(scl(hf,P.headLen*.48),scl(hu,P.headR*rs*.12)));
-    S(add(visor,scl(hs,-P.headR*rs*.34)),add(visor,scl(hs,P.headR*rs*.34)),
-      P.headR*rs*.07,P.headR*rs*.055,3,hard,'visor');
+    // Layered closed helm: a human-sized cranium, lower face plate and T visor.
+    // The small offsets let the hard shell win the material probe without
+    // inflating the head into the old round bead silhouette.
+    const hr0=P.headR*rs;
+    S(neckBase,head,P.chestR*rs*.22,hr0*.52,2,soft,'neck');
+    S(add(head,scl(hu,-hr0*.10)),add(head,scl(hu,hr0*.12)),hr0*.91,hr0,2,soft,'head');
+    const dome=add(head,add(scl(hf,hr0*.02),scl(hu,hr0*.05)));
+    S(dome,add(dome,scl(hu,hr0*.16)),hr0*1.035,hr0*.96,5,hard,'helmet');
+    const face=add(head,add(scl(hf,hr0*.76),scl(hu,-hr0*.16)));
+    S(add(face,scl(hs,-hr0*.48)),add(face,scl(hs,hr0*.48)),hr0*.34,hr0*.31,5,hard,'helmet');
+    const visor=add(head,add(scl(hf,hr0*1.01),scl(hu,hr0*.14)));
+    S(add(visor,scl(hs,-hr0*.46)),add(visor,scl(hs,hr0*.46)),hr0*.075,hr0*.06,3,hard,'visor');
+    S(visor,add(visor,scl(hu,-hr0*.43)),hr0*.058,hr0*.045,3,hard,'visor');
   }else{
     // neck seam pinch — thinner waist articulates head↔torso without a robotic break
     {const nR0=P.chestR*rs*.48,nR1=P.headR*rs*.68,nMid=mix(neckBase,head,.55);
@@ -1068,95 +1086,135 @@ function buildSkeleton(cr,dt){
     }
   }
 
-  // human arms: the right target and blade orientation are action-driven.
+  // Human shoulder girdle + arms. The clavicle shelf is essential at game
+  // distance: without it the perfectly valid IK limbs read as insect feelers.
   if(P.humanoid){
     const wt=clamp(WTIER|0,0,4), at=clamp(ATIER|0,0,3); /*FORGE*/
-    const armScale=st.scale, upper=.29*armScale, fore=.26*armScale;
-    let rightHand=null;
-    // shoulder shelf — wider than the chest tube so the silhouette is human, not a sausage
+    const armScale=st.scale, upper=.31*armScale, fore=.27*armScale, armLen=upper+fore;
+    const shoulderHalf=P.chestR*rs*1.34;
+    const shR=add(st.chest,add(scl(bs,shoulderHalf),add(scl(bu,P.chestR*rs*.08),scl(fw,P.chestR*rs*.04))));
+    const shL=add(st.chest,add(scl(bs,-shoulderHalf),add(scl(bu,P.chestR*rs*.08),scl(fw,P.chestR*rs*.04))));
+    const clavR=add(st.chest,add(scl(bs,shoulderHalf*.40),scl(bu,P.chestR*rs*.12)));
+    const clavL=add(st.chest,add(scl(bs,-shoulderHalf*.40),scl(bu,P.chestR*rs*.12)));
+    S(clavR,shR,P.chestR*rs*.33,P.chestR*rs*.37,2,soft,'shoulder');
+    S(clavL,shL,P.chestR*rs*.33,P.chestR*rs*.37,2,soft,'shoulder');
+
+    // Dark gambeson panel and belt establish chest/waist/pelvis as three
+    // readable masses even when the player is only a few dozen pixels tall.
+    const vest0=add(st.chest,scl(fw,P.chestR*rs*.64));
+    const vest1=add(mix(st.chest,st.hip,.62),scl(fw,P.midR*rs*.52));
+    S(vest0,vest1,P.chestR*rs*.58,P.midR*rs*.49,3,soft,'gambeson');
+    const pelvisL=add(st.hip,scl(bs,-P.hipR*rs*.58));
+    const pelvisR=add(st.hip,scl(bs,P.hipR*rs*.58));
+    S(pelvisL,pelvisR,P.hipR*rs*.52,P.hipR*rs*.52,2,soft,'pelvis');
+    const belt=add(mix(st.chest,st.hip,.78),scl(fw,P.hipR*rs*.56));
+    S(add(belt,scl(bs,-P.hipR*rs*.72)),add(belt,scl(bs,P.hipR*rs*.72)),.025,.025,3,hard,'belt');
+
+    // Cap-shaped pauldrons follow the shoulder line instead of sitting on it
+    // as detached balls. Forge tiers grow the same underlying silhouette.
     for(const s of[1,-1]){
-      const clav=add(st.chest,add(scl(bs,s*P.chestR*rs*.55),scl(bu,P.chestR*rs*.22)));
-      const shCap=add(st.chest,add(scl(bs,s*P.chestR*rs*1.12),scl(bu,P.chestR*rs*.12)));
-      S(clav,shCap,P.chestR*rs*.38,P.chestR*rs*.48,2,soft,'shoulder');
+      const sh=s>0?shR:shL, padS=at>=1?1.14:1; /*FORGE*/
+      const inner=add(sh,add(scl(bs,-s*.040*padS),scl(bu,.030*padS)));
+      const outer=add(sh,add(scl(bs,s*.055*padS),scl(bu,.005)));
+      S(inner,outer,.058*padS,.041*padS,5,hard,'pauldron');
     }
-    // breastplate: flat front plate over the gambeson tube
-    {const bp0=add(st.chest,add(scl(fw,P.chestR*rs*.72),scl(bu,P.chestR*rs*.08)));
-     const bp1=add(mix(st.chest,st.hip,.42),add(scl(fw,P.midR*rs*.55),scl(bu,-P.midR*rs*.05)));
-     S(bp0,bp1,P.chestR*rs*.78,P.midR*rs*.70,5,hard,'breastplate');}
-    for(const s of[1,-1]){
-      // glenoid sits out on the shoulder shelf, slightly below collarbone
-      const shA=add(st.chest,add(scl(fw,P.chestR*rs*.22),
-        add(scl(bs,s*P.chestR*rs*1.08),scl(bu,P.chestR*rs*.08))));
-      let tgt;
-      if(s>0&&st.act==='strike'){
-        const heavy=st.actProf.kind==='heavy', q=st.actT;
-        tgt=add(shA,add(scl(fw,heavy?.02:.16),add(scl(side,.11),
-          scl(bu,heavy?clamp((q-st.actProf.wind)/st.actProf.active,0,1)*.16-.02:-.13))));
-      }else if(s>0&&st.act==='dash'){
-        tgt=add(shA,add(scl(fw,-.18),add(scl(side,.15),scl(bu,-.12))));
-      }else if(s>0){
-        // ready guard: elbow back, hand low by the hip — human fighter, not T-pose
-        tgt=add(shA,add(scl(fw,.06),add(scl(side,.18),scl(bu,-.22))));
-      }else{
-        // off-hand forward for balance
-        tgt=add(shA,add(scl(fw,.14),add(scl(side,-.12),scl(bu,-.08))));
-      }
-      const pole=add(scl(fw,s>0?-1:.4),add(scl(side,s*.25),scl(bu,-.15)));
-      const {knee:el,foot:hd}=solve2(shA,tgt,upper,fore,add(st.chest,pole));
-      const tag=s>0?'armR':'armL';
-      S(shA,el,.054,.042,2,soft,tag); S(el,hd,.042,.030,2,soft,tag);
-      S(hd,hd,.050,.050,5,hard,'gauntlet');
-      if(s>0)rightHand=hd;
-      const pad=add(shA,add(scl(bs,s*P.chestR*rs*.08),scl(bu,.04))); /*FORGE*/
-      const padScale=at>=1?1.10:1; /*FORGE*/
-      S(pad,add(pad,scl(bu,.045*padScale)),P.chestR*rs*.48*padScale,P.chestR*rs*.42*padScale,5,hard,'pauldron'); /*FORGE*/
+    if(at>=1){ /*FORGE — breastplate only after first armor upgrade */
+      const bp0=add(st.chest,add(scl(fw,P.chestR*rs*.72),scl(bu,P.chestR*rs*.04)));
+      const bp1=add(mix(st.chest,st.hip,.45),scl(fw,P.midR*rs*.45));
+      const bpS=at>=3?1.15:1;
+      S(bp0,bp1,P.chestR*rs*.50*bpS,P.midR*rs*.40*bpS,5,hard,'breastplate');
+    } /*FORGE*/
+    let rTgt,lTgt;
+    if(st.act==='strike'){
+      const heavy=st.actProf.kind==='heavy', q=st.actT;
+      const p=clamp((q-st.actProf.wind)/st.actProf.active,0,1);
+      rTgt=add(shR,add(scl(fw,heavy?.04:.18),add(scl(bs,.12),
+        scl(bu,heavy?(-.04+.24*p):-armLen*.28))));
+      lTgt=add(shL,add(scl(fw,heavy?.18:.12),add(scl(bs,-.11),scl(bu,heavy?-armLen*.18:-armLen*.48))));
+    }else if(st.act==='dash'){
+      rTgt=add(shR,add(scl(fw,-.08),add(scl(bs,.12),scl(bu,-.16))));
+      lTgt=add(shL,add(scl(fw,.06),add(scl(bs,-.10),scl(bu,-.18))));
+    }else{
+      // Asymmetric ready stance: sword hand at the hip, free hand balancing
+      // forward. It stays relaxed without collapsing into a vertical T-pose.
+      rTgt=add(shR,add(scl(fw,.07),add(scl(bs,.12),scl(bu,-armLen*.72))));
+      lTgt=add(shL,add(scl(fw,.12),add(scl(bs,-.13),scl(bu,-armLen*.60))));
     }
+    // pole = direction (not world point): sword elbow back+out so the forearm aims the grip
+    const poleR=add(scl(fw,-.55),add(scl(bs,.40),scl(bu,.20)));
+    const poleL=add(scl(fw,-.65),add(scl(bs,-.25),scl(bu,.10)));
+    const armR=solve2(shR,rTgt,upper,fore,poleR);
+    const armL=solve2(shL,lTgt,upper,fore,poleL);
+    const rightHand=armR.foot;
+    S(shR,armR.knee,.052,.039,2,soft,'armR'); S(armR.knee,rightHand,.040,.030,2,soft,'armR');
+    S(shL,armL.knee,.052,.039,2,soft,'armL'); S(armL.knee,armL.foot,.040,.030,2,soft,'armL');
+    S(armR.knee,armR.knee,.043,.043,2,soft,'armR');
+    S(armL.knee,armL.knee,.043,.043,2,soft,'armL');
+    S(rightHand,rightHand,.034,.034,2,soft,'armR');
+    S(armL.foot,armL.foot,.034,.034,2,soft,'armL');
+    // Leather bracers darken the forearm taper; top-tier plate caps them.
+    S(mix(armR.knee,rightHand,.38),rightHand,.042,.034,3,soft,'armR');
+    S(mix(armL.knee,armL.foot,.38),armL.foot,.042,.034,3,soft,'armL');
+    if(at>=3){ /*FORGE*/
+      S(mix(armR.knee,rightHand,.42),mix(armR.knee,rightHand,.78),.044,.036,5,soft,'gauntlet');
+      S(mix(armL.knee,armL.foot,.42),mix(armL.knee,armL.foot,.78),.044,.036,5,soft,'gauntlet');
+    } /*FORGE*/
+
     if(at>=2){ /*FORGE*/
       const crest=add(head,add(scl(hu,P.headR*rs*.95),scl(hf,-.02))); /*FORGE*/
-      S(crest,add(crest,add(scl(hu,.16),scl(hf,-.04))),P.headR*rs*.18,.006,3,hard,'armor'); /*FORGE*/
+      S(crest,add(crest,add(scl(hu,.10),scl(hf,-.02))),P.headR*rs*.12,.004,3,hard,'armor'); /*FORGE*/
+      const skirt=add(st.hip,add(scl(fw,P.hipR*rs*.58),scl(bu,-P.hipR*rs*.28))); /*FORGE*/
+      for(const s of[1,-1]){const t0=add(skirt,scl(bs,s*P.hipR*rs*.62)); /*FORGE*/
+        S(t0,add(t0,scl(bu,-.11)),.043,.026,5,hard,'tasset');} /*FORGE*/
     } /*FORGE*/
     if(at>=3){ /*FORGE*/
-      const back=add(st.chest,add(scl(fw,-P.chestR*rs*.62),scl(bu,.02))); /*FORGE*/
-      S(back,add(back,scl(fw,-.16)),.10,.055,6,hard,'armor'); /*FORGE*/
-      const skirt=add(st.hip,scl(bu,-P.hipR*rs*.72)); /*FORGE*/
-      for(const s of[1,-1])S(add(skirt,scl(bs,s*.12)),add(add(skirt,scl(bs,s*.12)),scl(bu,-.10)),.045,.024,6,hard,'armor'); /*FORGE*/
+      const back=add(st.chest,add(scl(fw,-P.chestR*rs*.70),scl(bu,.015))); /*FORGE*/
+      S(back,add(back,scl(fw,-.11)),.075,.042,6,soft,'armor'); /*FORGE*/
     } /*FORGE*/
+
+    // —— real sword in the hand: pommel → grip (through fist) → guard → blade ——
     const axis=hunterSwordAxis(st,bu,side,fw);
-    const bladeLen=.95*armScale*(1+.06*wt); /*FORGE*/
-    st.bladeA=add(rightHand,scl(axis,.11));
+    const bladeLen=.92*armScale*(1+.06*wt); /*FORGE*/
+    const guardN=nrm(cross(up,axis)); // crossguard left/right
+    // hilt layout along the blade axis, centered on the fist
+    const pom=add(rightHand,scl(axis,-.09*armScale));           // pommel behind the hand
+    const grip0=add(rightHand,scl(axis,-.05*armScale));
+    const grip1=add(rightHand,scl(axis, .04*armScale));         // grip runs through the fist
+    const guardC=add(rightHand,scl(axis, .07*armScale));        // guard just past the knuckles
+    st.bladeA=add(rightHand,scl(axis,.11*armScale));            // steel starts after the guard
     st.bladeB=add(st.bladeA,scl(axis,bladeLen)); /*FORGE*/
-    const guard=nrm(cross(up,axis));
-    S(add(rightHand,scl(guard,-.11)),add(rightHand,scl(guard,.11)),.045,.045,3,hard,'sword');
-    const bladeMat=wt===0?5:wt===1?3:wt===2?7:wt===3?6:3; /*FORGE*/
-    const bladeR=wt>=4?.052:wt===3?.046:.034; /*FORGE*/
-    S(st.bladeA,st.bladeB,bladeR,wt>=3?.016:.012,bladeMat,hard,'sword'); /*FORGE*/
+    // fist wraps the grip (capsule along the hilt, not a floating ball)
+    S(grip0,grip1,.034,.030,2,soft,'armR');
+    // leather grip
+    S(grip0,grip1,.016,.014,3,hard,'sword');
+    // pommel
+    S(pom,pom,.030,.030,3,hard,'sword');
+    // crossguard
+    S(add(guardC,scl(guardN,-.07)),add(guardC,scl(guardN,.07)),.020,.018,3,hard,'sword');
+    // blade
+    const bladeMat=wt===0?10:wt===1?3:wt===2?7:wt===3?6:3; /*FORGE*/
+    const bladeR=wt>=4?.048:wt===3?.042:.026; /*FORGE*/
+    S(st.bladeA,st.bladeB,bladeR,wt>=3?.014:.009,bladeMat,hard,'sword'); /*FORGE*/
     if(wt===1){ /*FORGE*/
-      const gn=add(rightHand,scl(guard,.11)); /*FORGE*/
-      S(gn,add(gn,scl(axis,.09)),.018,.006,3,hard,'sword'); /*FORGE*/
+      const gn=add(guardC,scl(guardN,.07)); /*FORGE*/
+      S(gn,add(gn,scl(axis,.07)),.012,.004,3,hard,'sword'); /*FORGE*/
     } /*FORGE*/
     if(wt===2){ /*FORGE*/
-      const tip=nrm(add(axis,add(scl(side,.42),scl(bu,.10)))); /*FORGE*/
-      S(st.bladeB,add(st.bladeB,scl(tip,.16*armScale)),.025,.006,7,hard,'sword'); /*FORGE*/
+      const tip=nrm(add(axis,add(scl(side,.30),scl(bu,.08)))); /*FORGE*/
+      S(st.bladeB,add(st.bladeB,scl(tip,.12*armScale)),.018,.004,7,hard,'sword'); /*FORGE*/
     } /*FORGE*/
     if(wt>=3){ /*FORGE*/
-      const edge=add(scl(bu,.035),scl(guard,.012)); /*FORGE*/
-      S(add(st.bladeA,edge),add(st.bladeB,edge),.010,.005,6,hard,'sword'); /*FORGE*/
+      const edge=add(scl(bu,.022),scl(guardN,.008)); /*FORGE*/
+      S(add(st.bladeA,edge),add(st.bladeB,edge),.008,.003,6,hard,'sword'); /*FORGE*/
       for(const s of[-1,1]){ /*FORGE*/
-        const pr=add(rightHand,scl(guard,s*.11)); /*FORGE*/
-        S(pr,add(pr,scl(axis,s*.10)),.022,.006,3,hard,'sword'); /*FORGE*/
+        const pr=add(guardC,scl(guardN,s*.07)); /*FORGE*/
+        S(pr,add(pr,scl(axis,s*.06)),.014,.004,3,hard,'sword'); /*FORGE*/
       } /*FORGE*/
     } /*FORGE*/
     if(wt===4){ /*FORGE*/
-      const pom=add(rightHand,scl(axis,-.065)); /*FORGE*/
-      S(pom,pom,.052,.052,6,hard,'sword'); /*FORGE*/
+      S(pom,pom,.042,.042,6,hard,'sword'); /*FORGE*/ // bigger pommel
     } /*FORGE*/
     st.jawTip=st.bladeB;
-    // pelvis block under a short torso — hip width is the human tell
-    const pel=add(st.hip,scl(bu,-.02));
-    S(add(pel,scl(fw,-.08)),add(pel,scl(fw,.10)),P.hipR*rs*1.15,P.hipR*rs*.95,2,soft,'pelvis');
-    S(add(pel,scl(bs,-P.hipR*rs*.75)),add(pel,scl(bs,P.hipR*rs*.75)),P.hipR*rs*.48,P.hipR*rs*.48,2,soft,'pelvis');
-    const tas=add(st.hip,scl(bu,-P.hipR*rs*.65));
-    S(add(tas,scl(fw,-.07)),add(tas,scl(fw,.08)),P.hipR*rs*.70,P.hipR*rs*.42,5,hard,'tasset');
   }else if(P.arms)for(const s of[1,-1]){
     const shA=add(st.chest,add(scl(fw,P.chestR*rs*.55),
       add(scl(bs,s*P.chestR*rs*.6),scl(bu,-P.chestR*rs*.1))));
@@ -1176,21 +1234,29 @@ function buildSkeleton(cr,dt){
     if(P.mode==='zigzag'){
       const fs=P.fs*ls;
       if(P.humanoid){
-        // plantigrade knight: hip→knee→ankle, sole flat on the ground (no digitigrade metatarsal)
-        const hipJ=add(spine,add(scl(bs,leg.s*bodyR*.38),scl(bu,-bodyR*.05)));
-        const ankleT=add(leg.foot,add(V(0,fs*.55,0),scl(fw,fs*.12)));
-        let pole=add(scl(fw,1.15),V(0,.40,0)); // knees face forward
-        if(broken){pole=nrm(add(pole,scl(bs,leg.s*1.5)));ankleT[1]=Math.max(ankleT[1]-fs*.3,fs*.2);}
+        // Human leg: separated hip sockets, full thigh, forward knee, tapered
+        // shin and a heel-to-toe plantigrade boot.
+        const at=clamp(ATIER|0,0,3); /*FORGE*/
+        const hipJ=add(spine,add(scl(bs,leg.s*bodyR*.62),scl(bu,-bodyR*.05)));
+        const ankleT=add(leg.foot,add(V(0,fs*.50,0),scl(fw,fs*.04)));
+        let pole=add(scl(fw,1.2),V(0,.45,0));
+        if(broken){pole=nrm(add(pole,scl(bs,leg.s*1.5)));ankleT[1]=Math.max(ankleT[1]-fs*.28,fs*.18);}
         const {knee,foot:ank}=solve2(hipJ,ankleT,lu,ll,pole);
-        // thigh bulk + kneecap + shin (human mass, not stick-insect tubes)
-        S(hipJ,knee,lr*1.65,lr*1.15,2,soft,lgTag);
-        S(add(hipJ,scl(bu,bodyR*.18)),mix(hipJ,knee,.42),bodyR*.52,lr*1.2,2,soft,lgTag);
-        S(knee,knee,lr*1.18,lr*1.18,2,soft,lgTag);
-        S(knee,ank,lr*(broken?.78:.95),lr*.72*(broken?.7:1),2,soft,lgTag);
-        // boot sole heel→toe (plantigrade flat foot, not a talon tip)
-        const toe=add(leg.foot,scl(fw,fs*.95));
-        const heel=add(leg.foot,scl(fw,-fs*.40));
-        S(heel,toe,lr*1.05,lr*.78,5,hard,'boot');
+        S(hipJ,knee,lr*1.70,lr*1.12,2,soft,lgTag);
+        S(knee,knee,lr*1.16,lr*1.16,2,soft,lgTag);
+        S(knee,ank,lr*(broken?.78:1.02),lr*.72*(broken?.7:1),2,soft,lgTag);
+        // Tall leather boots keep the lower-leg taper legible against the
+        // ground; upgraded plate sits over this same underlying form.
+        S(mix(knee,ank,.52),ank,lr*1.10,lr*.82,3,soft,'boot');
+        const toe=add(leg.foot,scl(fw,fs*.96));
+        const heel=add(leg.foot,scl(fw,-fs*.38));
+        S(heel,toe,lr*1.04,lr*.72,3,hard,'boot');
+        const leatherKnee=add(knee,add(scl(fw,lr*.70),scl(bu,lr*.08)));
+        S(add(leatherKnee,scl(bs,-leg.s*lr*.30)),add(leatherKnee,scl(bs,leg.s*lr*.30)),lr*.58,lr*.50,3,soft,'kneepad');
+        if(at>=1){ /*FORGE*/
+          const kp=add(knee,add(scl(fw,lr*.72),scl(bu,lr*.08))); /*FORGE*/
+          S(add(kp,scl(bs,-leg.s*lr*.34)),add(kp,scl(bs,leg.s*lr*.34)),lr*.62,lr*.54,5,hard,'kneeplate'); /*FORGE*/
+        } /*FORGE*/
         kneeJ=knee;
       }else{
       // the Mammal Problem: solve hip→ankle two-bone, hang the metatarsal below —
@@ -1663,33 +1729,42 @@ void main(){
       if(B_STYLE==4){float v=smoothstep(.62,.88,vnoise(p*2.1))+.55*smoothstep(.66,.9,vnoise(p*5.3+7.));base=mix(base,B_GND_D,v*.22);emis+=B_GND_D*min(v,1.)*.3;} /*BIOME*/
     }
     else if(mi==9){base=B_ROCK;base*=.88+.12*sin(p.x*2.7)*sin(p.y*4.1)*sin(p.z*3.3);spk=.05;} /*BIOME*/
+    else if(mi==10){base=vec3(.42,.47,.50);shin=72.;spk=.92;} // plain steel
     else if(mi==1||mi==2){
-      // ---- hide: markings hang off a spine frame; bump only feeds lighting ----
-      float belly=smoothstep(.05,.9,-n.y);
-      // slightly stronger belly↔back value split for silhouette read
-      base=(mi==1)?mix(uPal[po],uPal[po+1],belly*.95):uPal[po+2];
-      base*=.80+.20*smoothstep(0.,.8,p.y);
-      int si=(grp==0)?0:2;
-      vec3 spA=uSpine[si].xyz, spB=uSpine[si+1].xyz;
-      float skinF=uSpine[si].w, cw=2.1/skinF;   // cw ≈ chest radius: size-aware widths
-      vec3 ax=spB-spA; float al2=max(dot(ax,ax),1e-4);
-      float ut=dot(p-spA,ax)/al2;               // 0 chest → 1 hip, <0 head, >1 tail
-      vec3 w=p-spA-ax*ut;
-      float mot=vnoise(p*skinF*.35)*.7+vnoise(p*skinF*1.2)*.3;
-      base*=.95+.09*mot;                        // soft large-patch mottling
-      float sc=scales(p,n,skinF*(.8+belly*.8));
-      base*=.92+.08*smoothstep(.06,.45,sc);     // faint plate cracks
-      float saddle=smoothstep(cw*1.15,cw*.54,length(w.xz))*step(0.,w.y)
-                  *smoothstep(-.25,.2,ut)*smoothstep(1.45,.95,ut);
-      base=mix(base,uPal[po+3],saddle*(.40+.16*mot));               // dorsal saddle (a touch stronger)
-      base=mix(base,uPal[po+1]*1.07,smoothstep(.02,-.55,ut)*belly*.65); // bright throat
-      base=mix(base,mix(base,uPal[po+5],.3),smoothstep(1.2,2.1,ut));    // tail hue drift
-      // head/crit zone: slight saturation + accent charge so the weak point pops
-      float headZ=smoothstep(.02,-.45,ut);
-      base=mix(base,mix(base*1.08,uPal[po+5],.28),headZ*.42);
-      if(mi==2)base=mix(base,uPal[po+3],
-        smoothstep(.55,.08,p.y/max(spA.y,.3))*.3);                  // dark leg socks
-      if(grp==1){ // boss wounds stay in broken patches, never as a flat health tint
+      if(grp==0){
+        // The hunter wears cloth, not procedural monster hide. Fine two-scale
+        // noise reads as woven fabric without cellular scales or dorsal marks.
+        base=(mi==1)?uPal[po]:uPal[po+2];
+        float weave=vnoise(p*34.)*.65+vnoise(p*67.)*.35;
+        base*=.93+.09*weave;
+        n=bumpN(p,n,.022,24.);
+        spk=.10; shin=18.;
+      }else{
+        // ---- hide: markings hang off a spine frame; bump only feeds lighting ----
+        float belly=smoothstep(.05,.9,-n.y);
+        // slightly stronger belly↔back value split for silhouette read
+        base=(mi==1)?mix(uPal[po],uPal[po+1],belly*.95):uPal[po+2];
+        base*=.80+.20*smoothstep(0.,.8,p.y);
+        vec3 spA=uSpine[2].xyz, spB=uSpine[3].xyz;
+        float skinF=uSpine[2].w, cw=2.1/skinF;   // cw ≈ chest radius: size-aware widths
+        vec3 ax=spB-spA; float al2=max(dot(ax,ax),1e-4);
+        float ut=dot(p-spA,ax)/al2;               // 0 chest → 1 hip, <0 head, >1 tail
+        vec3 w=p-spA-ax*ut;
+        float mot=vnoise(p*skinF*.35)*.7+vnoise(p*skinF*1.2)*.3;
+        base*=.95+.09*mot;                        // soft large-patch mottling
+        float sc=scales(p,n,skinF*(.8+belly*.8));
+        base*=.92+.08*smoothstep(.06,.45,sc);     // faint plate cracks
+        float saddle=smoothstep(cw*1.15,cw*.54,length(w.xz))*step(0.,w.y)
+                    *smoothstep(-.25,.2,ut)*smoothstep(1.45,.95,ut);
+        base=mix(base,uPal[po+3],saddle*(.40+.16*mot));               // dorsal saddle (a touch stronger)
+        base=mix(base,uPal[po+1]*1.07,smoothstep(.02,-.55,ut)*belly*.65); // bright throat
+        base=mix(base,mix(base,uPal[po+5],.3),smoothstep(1.2,2.1,ut));    // tail hue drift
+        // head/crit zone: slight saturation + accent charge so the weak point pops
+        float headZ=smoothstep(.02,-.45,ut);
+        base=mix(base,mix(base*1.08,uPal[po+5],.28),headZ*.42);
+        if(mi==2)base=mix(base,uPal[po+3],
+          smoothstep(.55,.08,p.y/max(spA.y,.3))*.3);                  // dark leg socks
+        // Boss wounds stay in broken patches, never as a flat health tint.
         float hurt=0.;
         if(mi==1){
           float tailZone=smoothstep(1.08,1.30,ut);
@@ -1708,10 +1783,10 @@ void main(){
           base=mix(base,vec3(g*.96,g*.94,g*.90),uHurt.z*.42);
           base*=.90+.10*smoothstep(.04,.50,sc); // deeper plate-crack contrast
         }
+        n=bumpN(p,n,.09,skinF*1.5);               // wrinkles live in the highlights
+        spk=.14+.5*smoothstep(.34,.04,sc);        // spec pools on plate centers
+        shin=16.+30.*smoothstep(.34,.04,sc);
       }
-      n=bumpN(p,n,.09,skinF*1.5);               // wrinkles live in the highlights
-      spk=.14+.5*smoothstep(.34,.04,sc);        // spec pools on plate centers
-      shin=16.+30.*smoothstep(.34,.04,sc);
     }
     else if(mi==3)base=uPal[po+3];
     else if(mi==4){
