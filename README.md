@@ -52,17 +52,22 @@ The quest banner briefs the tells.
   Fable's fixed seed means Fable has a theme of its own.
 
 - **WASD** move · **click / J** attack — 3-hit sword combo · **shift** dash
-  (i-frames) · **space** jump · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
+  (i-frames) · **space** jump · hold **K / right-click** to guard (tap into a
+  hit for a perfect parry) · **Q** potion ×3 · **Tab** lock-on · **E** carve ·
   **M** mute · **P** pixel mode (or `?pixel=1`) — 180p retro render, posterized + dithered ·
   **R / B** after the verdict — retry / back to the board · 3 faints = quest failed
 - **Touch & gamepad**: left-half touches raise a floating stick, right half
-  stays orbit/tap-attack, with a glass DASH·JUMP·POTION·CARVE cluster; on a
+  stays orbit/tap-attack, with a glass DASH·JUMP·GUARD·POTION·CARVE cluster; on a
   pad the sticks move/orbit, **A** attack · **B** dash · **X** jump ·
-  **Y** hold-potion · **RB** carve · **LB** lock-on
-- **You hunt as a hunter** — an upright plantigrade capsule-knight (vertical
-  helm, shoulder shelf, breastplate, boots; no face) built from the same limb
-  class as the monsters: slash · backhand · overhead heavy, the swings driven
-  by arm IK, the blade swept as a 5-point probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
+  **LT** guard · **Y** hold-potion · **RB** carve · **LB** lock-on
+- **You hunt as a hunter** — an athletic upright human (≈7.5-head proportions:
+  closed helm, shoulder girdle, tapered torso, pelvis, plantigrade boots, and a
+  sword carried at the hip). Same limb class as the monsters; forge upgrades add
+  breastplate, knee plate, tassets, crest, and gauntlets. Slash · backhand ·
+  overhead heavy, aerial cuts, dash-cancels, and a two-hand guard all use full-body
+  procedural motion: heel-to-toe foot roll, planted-leg weight shift, pelvis/ribcage
+  counter-rotation, arm counter-swing, jump balance, and landing recovery. The blade
+  is swept as a 5-point probe. Aim assist snaps the opener onto the nearest capsule in a 75° cone,
   and attacking out of a dash cancels it into the first slash with the
   momentum folded in.
 - **Stamina is the leash** — dashes and the heavy finisher spend it, regen
@@ -120,6 +125,54 @@ asserts each weapon/armor tier stays finite and in the capsule budget.
 
 *Farewell build — led by Claude Fable 5, with GPT-5.6 and Grok 4.5 as
 executor lanes.*
+
+## Cel Arena — mesh × procedural (`celhunt.html`)
+
+The counter-experiment to everything above: can an **authored mesh asset** and
+**procedural creatures** coexist in one game? `celhunt.html` is a separate
+three.js implementation where the hunter is `assets/Soldier.glb` (a skinned,
+Mixamo-rigged mesh with authored Idle/Walk/Run clips — the repo's only art
+file) and the monsters are seeded procedural assemblies (beast · rex · puff ·
+serpent · drake · kirin · moth, ~1/16 roll shiny), all unified by a
+Pokémon-style render pass: 2-band cel ramp, flat saturated palettes,
+inverted-hull ink outlines on actors only, blob shadows. The crossover in one
+object: a procedural sword parented to the rig's hand bone, with the whole
+moveset — a 3-hit combo (slash / backhand / overhead finisher with root
+motion), a somersault dodge roll with i-frames, a hold-to-guard block, hurt
+flinches, a backward death collapse and a sword-up wave-clear flourish —
+layered as procedural bone rotation on top of the playing clips.
+
+The monsters are built chibi (head ≈ body, stubby limbs) around a shared
+face kit — white-sclera anime eyes with palette-colored irises, pupils and
+double catchlights that blink as a unit, cheek glows, brows that appear only
+while angry, mouths that gape through the windup — plus rolled ears
+(point/round/bunny/fin), tails (chain/fluff/flame/club), swept multi-segment
+horns, dorsal plate rows, tuft manes, and spots/stripes/socks body patterns,
+all drawn from curated 5-slot palettes (body/belly/limb/plate/glow, the glow
+slot self-lit). Animation is all code and leans on the classic principles:
+squash & stretch on a dedicated rig node, anticipation squat before every
+lunge, alert hops, turn banking with head counter-rotation, gait-synced
+ear/arm/tail secondary motion, footfall dust, idle glances and tail wags, and
+a tip-over faint with shut eyes and a star burst. The kirin gets a
+high-stepping trot and ribbon tail, the moth hovers on patterned wing cards.
+The monster overhaul, the drake archetype, the hunter moveset and two
+adversarial reviews came from GPT-5.6 and Grok 4.5 executor lanes led from
+this repo's specs.
+
+Serve the repo root (`python3 -m http.server 8391`) and open
+`http://localhost:8391/celhunt.html` — opening the file directly also works
+if online (the GLB falls back to a CDN copy). **WASD** move (camera-relative) ·
+**shift** walk · **click / J** attack, press again mid-swing to combo ·
+**space** dodge roll · **hold K** guard · **drag** orbit · **wheel** zoom.
+`?seed=N` pins the species; waves escalate; `?shot=1&az=&el=&dist=` +
+`?nohud=1` for hero shots; `?zoo=1[&only=base]` lines up one of every
+archetype at idle for creature review.
+
+Test: `node test/cel-qa.js` — mesh pages can't use the vm harness, and
+headless Chrome's `--virtual-time-budget` hangs GLB texture decode, so this is
+a real-time DevTools-protocol driver (needs node ≥ 21): it launches headless
+Chrome, waits for the page's `?qa=1` self-test verdict in `<title>`, and can
+inject input and capture screenshots (`--exec`, `--shot`, `--wait`).
 
 ## Run it (the lab)
 

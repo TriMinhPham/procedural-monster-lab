@@ -98,6 +98,81 @@ vm.runInContext(`
   for (const p of [player.bladeA, player.bladeB])
     if (!p.every(isFinite)) throw new Error('hunter blade endpoint is not finite');
 
+  // 1b. Organic hunter motion: gait must drive counter-swing/twist and foot
+  // roll, then settle without residual jitter. Drive the rig directly so the
+  // boss AI cannot make this deterministic animation contract flaky.
+  player.act = null; player.restOn = false; player.moveDir = [1, 0, 0];
+  player.vel = [0, 0, 0]; player.imp = [0, 0, 0];
+  let twistMin = 9, twistMax = -9, handMin = 9, handMax = -9, footRoll = 0;
+  for (let i = 0; i < 150; i++) {
+    buildSkeleton(player, 1 / 60);
+    twistMin = Math.min(twistMin, player.twist); twistMax = Math.max(twistMax, player.twist);
+    const handTravel = dot(sub(player.handL, player.chest), player.fw);
+    handMin = Math.min(handMin, handTravel); handMax = Math.max(handMax, handTravel);
+    for (const s of player.segs.hard.filter(s => s[5] === 'boot'))
+      footRoll = Math.max(footRoll, Math.abs(s[0][1] - s[1][1]));
+  }
+  if (player.motionN < .75) throw new Error('hunter locomotion did not blend up: ' + player.motionN);
+  if (twistMax - twistMin < .10) throw new Error('hunter torso has no gait counter-twist: ' + (twistMax - twistMin));
+  if (handMax - handMin < .08) throw new Error('hunter free arm has no counter-swing');
+  if (footRoll < .006) throw new Error('hunter feet do not roll through steps: ' + footRoll);
+  player.moveDir = [0, 0, 0];
+  for (let i = 0; i < 100; i++) buildSkeleton(player, 1 / 60);
+  if (player.motionN > .04 || Math.abs(player.twist) > .025 || Math.abs(player.lean) > .025)
+    throw new Error('hunter locomotion did not settle cleanly');
+
+  // Jump owns the whole body and emits a landing recovery, not just a y offset.
+  startAction(player, 'jump');
+  let maxJump = 0, maxLand = 0, maxHandSpread = 0;
+  for (let i = 0; i < 150; i++) {
+    buildSkeleton(player, 1 / 60);
+    maxJump = Math.max(maxJump, player.jumpY); maxLand = Math.max(maxLand, player.land);
+    maxHandSpread = Math.max(maxHandSpread, len(sub(player.handR, player.handL)));
+  }
+  if (maxJump < .35 || maxLand < .75) throw new Error('hunter jump/landing overlay missing');
+  if (maxHandSpread < .45) throw new Error('hunter does not balance with the arms in air');
+
+  // Sword direction must travel a broad arc without a per-frame pose snap.
+  player.act = null; player._comboQ = false; startPlayerStrike(0);
+  let firstAxis = null, prevAxis = null, broadArc = 0, maxAxisStep = 0;
+  for (let i = 0; i < 80; i++) {
+    buildSkeleton(player, 1 / 120);
+    const axis = nrm(sub(player.bladeB, player.bladeA));
+    if (!firstAxis) firstAxis = axis;
+    broadArc = Math.max(broadArc, Math.acos(clamp(dot(firstAxis, axis), -1, 1)));
+    if (prevAxis) maxAxisStep = Math.max(maxAxisStep, Math.acos(clamp(dot(prevAxis, axis), -1, 1)));
+    prevAxis = axis;
+  }
+  if (broadArc < 1.1) throw new Error('hunter slash arc is too small: ' + broadArc);
+  if (maxAxisStep > .52) throw new Error('hunter sword pose snapped: ' + maxAxisStep);
+  player.act = null; player._struck = false;
+
+  // Guard: early frontal contact is a parry; held guard reduces later damage.
+  player.hp = player.maxHp; player.stam = player.stamMax; player.iFrames = 0;
+  playerGuard(true); for (let i = 0; i < 3; i++) buildSkeleton(player, 1 / 60);
+  const front = add(player.leader, scl(player.fw, 1));
+  hurtPlayer(30, front);
+  if (player.hp !== player.maxHp || player.stam >= player.stamMax)
+    throw new Error('perfect guard did not negate damage and spend stamina');
+  player.iFrames = 0; for (let i = 0; i < 15; i++) buildSkeleton(player, 1 / 60);
+  const hpGuard = player.hp; hurtPlayer(30, front);
+  const blockedDamage = hpGuard - player.hp;
+  if (blockedDamage < 1 || blockedDamage > 12) throw new Error('held guard reduction wrong: ' + blockedDamage);
+  playerGuard(false); player.hp = player.maxHp; player.stam = player.stamMax; player.iFrames = 0;
+  player.moveDir = [1, 0, 0]; playerDash();
+  let dashLean = 0, dashCrouch = 0;
+  for (let i = 0; i < 30; i++) {
+    buildSkeleton(player, 1 / 60);
+    dashLean = Math.max(dashLean, player.lean); dashCrouch = Math.max(dashCrouch, player.crouch);
+  }
+  if (dashLean < .16 || dashCrouch < .22)
+    throw new Error('dash has no full-body compression: ' + dashLean + '/' + dashCrouch);
+  player.moveDir = [0, 0, 0]; player.stam = player.stamMax; player.iFrames = 0;
+  console.log('hunter-motion | twist:', (twistMax - twistMin).toFixed(3),
+    '| hand:', (handMax - handMin).toFixed(3), '| foot-roll:', footRoll.toFixed(3),
+    '| slash:', broadArc.toFixed(3), '| max-step:', maxAxisStep.toFixed(3),
+    '| dash:', dashLean.toFixed(3) + '/' + dashCrouch.toFixed(3));
+
   // 2. approach → aggro
   player.leader = [boss.leader[0] + 5, player.P.chestH, boss.leader[2]];
   player.sodChest.reset(player.leader);
